@@ -1,7 +1,7 @@
 # Phase 0.5: C#-Schnelltests (Messdokument)
 
 Zweck: messen, wie weit der bestehende C#-Code mit billigen Hebeln kommt, bevor über Rust entschieden wird (Go/No-Go in 0.6).
-Alle Tests laufen über denselben Korpus (103 Logs, [corpus-manifest.tsv](corpus-manifest.tsv)) mit dem Messprogramm `GW2EIParserReference` (ein Log pro Prozess, alle Berechnungen, JSON serialisiert). Jeder Test wurde gegen die Referenz-Hashes geprüft ([reference-hashes.tsv](reference-hashes.tsv)): **bei jedem Test, der eine Ausgabe liefert, sind alle 103 JSON-Dateien byte-identisch.**
+Alle Tests laufen über denselben Korpus (103 Logs, [corpus-manifest.tsv](corpus-manifest.tsv)) mit dem Messprogramm `GW2EIParserReference` (ein Log pro Prozess, alle Berechnungen, JSON serialisiert). Jeder Test wurde gegen die Referenz-Hashes geprüft ([reference-hashes.tsv](reference-hashes.tsv)): **bei jedem Test, der eine Ausgabe liefert (alle außer Native AOT), sind alle 103 JSON-Dateien byte-identisch.**
 Rohdaten pro Log und Test: [results/](results/) (TSV). Verworfene Code-Experimente: [patches/](patches/).
 
 Messrechner: Windows 11, 24 logische Kerne, 32 GB RAM, .NET SDK 10.0.404. Zeiten sind **Wall** (Prozess von außen gemessen, inklusive Runtime-Start und Laden der API-Daten), sofern nicht anders angegeben.
@@ -21,7 +21,7 @@ Messrechner: Windows 11, 24 logische Kerne, 32 GB RAM, .NET SDK 10.0.404. Zeiten
 | T7 | Code: 13 lineare Zeitfilter in `Actor.cs` durch Binärsuche ersetzt | [patches/binary-search-timefilter.patch](patches/binary-search-timefilter.patch) | 103/103 | -0,2 %, Allokationen -0,1 %: **kein Gewinn, verworfen** |
 | T8 | ReadyToRun-Kompilierung (`PublishReadyToRun`, win-x64) | `dotnet publish -r win-x64 --self-contained false -p:PublishReadyToRun=true` | 103/103 | **-30,5 %** |
 | T9 | T8 + `TieredPGO=0` | wie T8 plus Umgebungsvariable | 103/103 | **-36,8 %** |
-| T10 | Multithread-Parse (`--threads`) | `Invoke-Corpus.ps1 -Threads` | nicht geprüft (nur Zeit) | -10,9 %; Parse langsamer, Build schneller |
+| T10 | Multithread-Parse (`--threads`) | `Invoke-Corpus.ps1 -Threads` | 103/103 | -10,9 %; Parse langsamer, Build schneller |
 | AOT | Native AOT (`PublishAot`) | `dotnet publish -r win-x64 -p:PublishAot=true` | - | **läuft nicht**, siehe unten |
 
 T6 und T7 liefen im selben Zeitraum wie T0b; der Vergleich ist daher gegen T0b gezogen.
