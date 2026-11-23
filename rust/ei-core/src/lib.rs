@@ -8,6 +8,7 @@ pub mod csr;
 pub mod keep;
 pub mod meta;
 pub mod model;
+pub mod pipeline;
 pub mod rules;
 
 /// Constants generated from the C# sources by `tools/gen`. Do not edit by hand.
