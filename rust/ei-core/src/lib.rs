@@ -4,6 +4,7 @@
 //! `LICENSE` file in the repository root.
 
 pub mod csr;
+pub mod keep;
 pub mod model;
 pub mod rules;
 
