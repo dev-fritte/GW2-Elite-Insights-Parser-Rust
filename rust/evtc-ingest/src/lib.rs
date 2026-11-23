@@ -7,6 +7,12 @@
 //! Ported from `GW2EIEvtcParser/EvtcParser.cs` of the GW2 Elite Insights parser (MIT License,
 //! Copyright (c) 2018 baaron4), see the `LICENSE` file in the repository root.
 
+mod error;
+mod header;
+
+pub use error::{Error, Section};
+pub use header::Header;
+
 /// Size of the fixed header in bytes: 12 byte `EVTC<date>`, 1 byte revision, 2 byte trigger id,
 /// 1 byte unused (`EvtcParser.ParseLogData`).
 pub const HEADER_LEN: usize = 16;
