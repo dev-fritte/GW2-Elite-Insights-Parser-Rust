@@ -24,7 +24,7 @@ internal static class Program
     {
         CultureInfo.CurrentCulture = CultureInfo.DefaultThreadCurrentCulture = CultureInfo.CreateSpecificCulture("en-US");
         string? logPath = null, outPath = null;
-        string? oraclePath = null;
+        string? oraclePath = null, dumpDir = null;
         bool threads = false, noJson = false;
         int runs = 1;
         for (int i = 0; i < args.Length; i++)
@@ -36,10 +36,12 @@ internal static class Program
                 case "--threads": threads = true; break;
                 case "--no-json": noJson = true; break;
                 case "--oracle": oraclePath = args[++i]; break;
+                case "--dump-data": dumpDir = args[++i]; break;
                 case "--runs": runs = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
                 default: Console.Error.WriteLine($"Unbekanntes Argument {args[i]}"); return 2;
             }
         }
+        if (dumpDir != null) { DataDump.Run(dumpDir); return 0; }
         if (logPath == null) { Console.Error.WriteLine("--log fehlt"); return 2; }
 
         var processStart = Process.GetCurrentProcess().StartTime;
