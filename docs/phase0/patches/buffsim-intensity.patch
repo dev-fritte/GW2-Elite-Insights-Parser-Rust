@@ -1,0 +1,59 @@
+diff --git a/GW2EI.Library/GW2EI.Services/GW2EIEvtcParser/EIData/Buffs/BuffSimulators/BuffSimulatorID/BuffSimulatorIDIntensity.cs b/GW2EI.Library/GW2EI.Services/GW2EIEvtcParser/EIData/Buffs/BuffSimulators/BuffSimulatorID/BuffSimulatorIDIntensity.cs
+index 73c3d39b8..e4d2e326e 100644
+--- a/GW2EI.Library/GW2EI.Services/GW2EIEvtcParser/EIData/Buffs/BuffSimulators/BuffSimulatorID/BuffSimulatorIDIntensity.cs
++++ b/GW2EI.Library/GW2EI.Services/GW2EIEvtcParser/EIData/Buffs/BuffSimulators/BuffSimulatorID/BuffSimulatorIDIntensity.cs
+@@ -23,22 +23,40 @@ internal class BuffSimulatorIDIntensity : BuffSimulatorID
+         BuffStack.Add(Pool.GetBuffStackItemID(start, duration, src, addedActive, stackID));
+     }
+ 
++    // Reused between Update calls, BuffSimulationItemIntensity copies what it needs from it.
++    private readonly List<BuffStackItemID> _activeStacks = [];
++
+     protected override void Update(long timePassed)
+     {
+-        if (BuffStack.Count != 0 && timePassed > 0)
++        while (BuffStack.Count != 0 && timePassed > 0)
+         {
+             long diff = timePassed;
+             long leftOver = 0;
+-            var activeStacks = BuffStack.Where(x => x.Active && x.Duration > 0).ToList();
+-            if (activeStacks.Count > _capacity)
++            var activeStacks = _activeStacks;
++            activeStacks.Clear();
++            foreach (BuffStackItemID stack in (_capacity > 0 ? BuffStack : []))
+             {
+-                activeStacks = activeStacks.Take(_capacity).ToList();
++                if (stack.Active && stack.Duration > 0)
++                {
++                    activeStacks.Add(stack);
++                    if (activeStacks.Count == _capacity)
++                    {
++                        break;
++                    }
++                }
+             }
+             if (activeStacks.Count != 0)
+             {
+                 var toAdd = new BuffSimulationItemIntensity(activeStacks);
+                 GenerationSimulation.Add(toAdd);
+-                long currentDur = activeStacks.Min(x => x.Duration);
++                long currentDur = long.MaxValue;
++                foreach (var stack in activeStacks)
++                {
++                    if (stack.Duration < currentDur)
++                    {
++                        currentDur = stack.Duration;
++                    }
++                }
+                 long timeDiff = currentDur - timePassed;
+                 if (timeDiff < 0)
+                 {
+@@ -58,7 +76,7 @@ internal class BuffSimulatorIDIntensity : BuffSimulatorID
+             {
+                 buffStackItem.Shift(diff, 0);
+             }
+-            Update(leftOver);
++            timePassed = leftOver;
+         }
+     }
+ }

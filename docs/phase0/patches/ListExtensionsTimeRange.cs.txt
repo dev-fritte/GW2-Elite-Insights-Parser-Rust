@@ -1,0 +1,38 @@
+using System.Runtime.InteropServices;
+using GW2EIEvtcParser.ParsedData;
+
+namespace GW2EIEvtcParser;
+
+public static partial class ListExt
+{
+    /// <summary>
+    /// Returns a copy of all elements with <c>start &lt;= Time &lt;= end</c>.
+    /// Equivalent to <c>list.Where(x =&gt; x.Time &gt;= start &amp;&amp; x.Time &lt;= end).ToList()</c>, but uses two binary searches instead
+    /// of a linear scan. The list has to be sorted ascending by <see cref="TimeCombatEvent.Time"/>; the order of equal times is kept.
+    /// </summary>
+    public static List<T> SliceByTime<T>(this List<T> sortedByTime, long start, long end) where T : TimeCombatEvent
+    {
+        var span = CollectionsMarshal.AsSpan(sortedByTime);
+        // first index with Time >= start
+        int lo = 0, hi = span.Length;
+        while (lo < hi)
+        {
+            int mid = lo + ((hi - lo) >> 1);
+            if (span[mid].Time < start) { lo = mid + 1; } else { hi = mid; }
+        }
+        int first = lo;
+        // first index with Time > end
+        hi = span.Length;
+        while (lo < hi)
+        {
+            int mid = lo + ((hi - lo) >> 1);
+            if (span[mid].Time <= end) { lo = mid + 1; } else { hi = mid; }
+        }
+        int count = lo - first;
+        if (count <= 0)
+        {
+            return [];
+        }
+        return new List<T>(span.Slice(first, count).ToArray());
+    }
+}
