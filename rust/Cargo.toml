@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["evtc-ingest", "evtc-oracle", "ei-core", "ei-cli", "ei-parity"]
+members = ["evtc-ingest", "evtc-oracle", "ei-data", "ei-core", "ei-cli", "ei-parity"]
 
 [workspace.package]
 version = "0.1.0"
