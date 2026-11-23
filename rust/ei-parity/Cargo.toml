@@ -1,0 +1,18 @@
+[package]
+name = "ei-parity"
+description = "Compares the JSON of the Rust core with the C# reference JSON field by field."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+ei-core = { path = "../ei-core" }
+evtc-ingest = { path = "../evtc-ingest" }
+serde_json = "1.0.154"
