@@ -5,7 +5,11 @@ checked against its output (see `docs/RUST_MIGRATION_PLAN.md` and `docs/phase1/O
 
 | Crate | Purpose | Status |
 | --- | --- | --- |
-| `evtc-ingest` | Zero-copy reader for EVTC logs | skeleton (phase 1.1) |
+| `evtc-ingest` | Reader for EVTC logs (header, agents, skills, records) | checked against the C# oracle |
+| `ei-core` | Event model, indices, record filter, metadata, players | checked against the C# JSON |
+| `ei-cli` | The `ei` program: log in, JSON out | prototype |
+| `evtc-oracle` | Compares `evtc-ingest` and the record filter with the C# oracle | tool |
+| `ei-parity` | Compares the Rust JSON with the C# reference JSON | tool |
 
 Checks (also run in `.github/workflows/rust-check.yml`):
 
