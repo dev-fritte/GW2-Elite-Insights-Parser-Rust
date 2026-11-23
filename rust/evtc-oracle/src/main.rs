@@ -13,6 +13,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use ei_core::keep::{KeepSettings, keep_events};
 use evtc_ingest::{Evtc, read_log};
 use sha2::{Digest, Sha256};
 
@@ -93,8 +94,8 @@ fn run() -> Result<bool, Box<dyn Error>> {
     Ok(mismatches == 0)
 }
 
-/// Number of columns compared per log.
-const COLUMNS: usize = 11;
+/// Number of columns compared per log when the log is accepted.
+const COLUMNS: usize = 19;
 
 /// Computes the oracle columns of layer A (header, agents, skills, event area and events).
 fn summarize(data: &[u8]) -> Result<Row, evtc_ingest::Error> {
@@ -132,7 +133,15 @@ fn summarize(data: &[u8]) -> Result<Row, evtc_ingest::Error> {
         events.update(record.to_canonical());
     }
 
-    Ok(vec![
+    let records: Vec<_> = evtc.events().collect();
+    let kept = keep_events(
+        &records,
+        header.trigger_id(),
+        header.build(),
+        KeepSettings::default(),
+    );
+
+    let mut row: Row = vec![
         ("BuildString", header.build_string().to_string()),
         ("Revision", header.revision().to_string()),
         ("TriggerId", header.trigger_id().to_string()),
@@ -144,7 +153,25 @@ fn summarize(data: &[u8]) -> Result<Row, evtc_ingest::Error> {
         ("Events", evtc.event_count().to_string()),
         ("TrailingBytes", evtc.trailing_bytes().to_string()),
         ("EventsHash", hex(&events.finalize())),
-    ])
+    ];
+    match kept {
+        Ok(kept) => {
+            let mut hash = Sha256::new();
+            for record in &kept.events {
+                hash.update(record.to_canonical());
+            }
+            row.push(("KeptCount", kept.events.len().to_string()));
+            row.push(("KeptHash", hex(&hash.finalize())));
+            row.push(("KeptTriggerId", kept.trigger_id.to_string()));
+            row.push(("MapId", kept.map_id.to_string()));
+            row.push(("LogStartOffset", kept.log_start_offset.to_string()));
+            row.push(("LogEndTime", kept.log_end_time.to_string()));
+            row.push(("Gw2Build", kept.gw2_build.to_string()));
+            row.push(("KeptError", String::new()));
+        }
+        Err(e) => row.push(("KeptError", e.to_string())),
+    }
+    Ok(row)
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -189,7 +216,9 @@ mod tests {
         data.extend_from_slice(&0u32.to_le_bytes());
         data.extend_from_slice(&0u32.to_le_bytes());
         let row = summarize(&data).unwrap();
-        assert_eq!(row.len(), COLUMNS);
+        // no combat events: all layer A columns plus the keep error
+        assert_eq!(row.len(), 12);
+        assert_eq!(row[11], ("KeptError", "no combat events found".to_string()));
         assert_eq!(row[0], ("BuildString", "EVTC20260920".to_string()));
         assert_eq!(row[2], ("TriggerId", "15429".to_string()));
         // SHA256 of the empty input

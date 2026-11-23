@@ -199,6 +199,7 @@ dependencies = [
 name = "evtc-oracle"
 version = "0.1.0"
 dependencies = [
+ "ei-core",
  "evtc-ingest",
  "sha2",
 ]

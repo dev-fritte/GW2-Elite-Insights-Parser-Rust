@@ -13,5 +13,6 @@ publish = false
 workspace = true
 
 [dependencies]
+ei-core = { path = "../ei-core" }
 evtc-ingest = { path = "../evtc-ingest" }
 sha2 = "0.10"
