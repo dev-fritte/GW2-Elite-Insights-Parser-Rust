@@ -3,6 +3,7 @@
 use crate::COMBAT_RECORD_LEN;
 use crate::agents::AgentTable;
 use crate::error::Error;
+use crate::events::EventIter;
 use crate::header::Header;
 use crate::skills::SkillTable;
 
@@ -55,6 +56,12 @@ impl<'a> Evtc<'a> {
     #[must_use]
     pub fn event_bytes(&self) -> &'a [u8] {
         self.events
+    }
+
+    /// Iterates over the decoded combat records in file order (revision taken from the header).
+    #[must_use]
+    pub fn events(&self) -> EventIter<'a> {
+        EventIter::new(self.header.revision(), self.events)
     }
 
     /// Number of complete 64 byte combat records.

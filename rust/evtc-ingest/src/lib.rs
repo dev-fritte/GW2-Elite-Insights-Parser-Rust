@@ -9,6 +9,7 @@
 
 mod agents;
 mod error;
+mod events;
 mod evtc;
 mod header;
 mod load;
@@ -16,6 +17,7 @@ mod skills;
 
 pub use agents::{AGENT_NAME_LEN, Agent, AgentTable};
 pub use error::{Error, Section};
+pub use events::{CombatRecord, EventIter, STATE_CHANGE_UNKNOWN};
 pub use evtc::Evtc;
 pub use header::Header;
 pub use load::{is_compressed_name, is_supported_name, read_archive, read_log};
