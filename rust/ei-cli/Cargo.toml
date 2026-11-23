@@ -1,0 +1,22 @@
+[package]
+name = "ei-cli"
+description = "Command line front end of the Rust core: reads an EVTC log and writes JSON."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "ei"
+path = "src/main.rs"
+
+[dependencies]
+ei-core = { path = "../ei-core" }
+evtc-ingest = { path = "../evtc-ingest" }
+serde_json = "1.0.154"
