@@ -6,6 +6,7 @@
 pub mod api;
 pub mod csr;
 pub mod keep;
+pub mod meta;
 pub mod model;
 pub mod rules;
 
