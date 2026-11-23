@@ -106,17 +106,20 @@ internal static class OracleDump
             int rec = (int)agentStart + 4 + 96 * i;
             uint rawProf = BitConverter.ToUInt32(bytes, rec + 8);
             uint rawElite = BitConverter.ToUInt32(bytes, rec + 12);
+            // The AgentItem constructor overrides the hitbox of players (48 x 240), so read the raw values.
+            uint rawHitboxW = 2u * BitConverter.ToUInt16(bytes, rec + 22);
+            uint rawHitboxH = 2u * BitConverter.ToUInt16(bytes, rec + 26);
             var name = Encoding.UTF8.GetBytes(a.Name);
             using var buf = new MemoryStream();
             using (var w = new BinaryWriter(buf, Encoding.UTF8, leaveOpen: true))
             {
                 w.Write(a.Agent); w.Write(rawProf); w.Write(rawElite);
                 w.Write(a.Toughness); w.Write(a.Concentration); w.Write(a.Healing); w.Write(a.Condition);
-                w.Write(a.HitboxWidth); w.Write(a.HitboxHeight);
+                w.Write(rawHitboxW); w.Write(rawHitboxH);
                 w.Write((uint)name.Length); w.Write(name);
             }
             agentHash.AppendData(buf.ToArray());
-            agentRows.Add(new { agent = a.Agent, prof = rawProf, elite = rawElite, toughness = a.Toughness, concentration = a.Concentration, healing = a.Healing, condition = a.Condition, hitbox_w = a.HitboxWidth, hitbox_h = a.HitboxHeight, name = a.Name });
+            agentRows.Add(new { agent = a.Agent, prof = rawProf, elite = rawElite, toughness = a.Toughness, concentration = a.Concentration, healing = a.Healing, condition = a.Condition, hitbox_w = rawHitboxW, hitbox_h = rawHitboxH, name = a.Name });
         }
 
         // ---- skills (C# reader: first occurrence wins, name cut at first NUL)
