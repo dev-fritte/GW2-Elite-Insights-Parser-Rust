@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- Phase-0-Werkzeug: erzeugt Referenz-JSON und misst Parse-/Build-Zeiten pro Log (ein Log pro Prozess). -->
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <LangVersion>latest</LangVersion>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <AssemblyName>GW2EIParserReference</AssemblyName>
+        <RootNamespace>GW2EIParserReference</RootNamespace>
+        <OutputPath>..\..\..\GW2EI.bin\$(Configuration).ref\</OutputPath>
+        <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+        <Configurations>Debug;Release;NoRewards;Trace</Configurations>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+        <DebugType>none</DebugType>
+        <DebugSymbols>false</DebugSymbols>
+        <PlatformTarget>AnyCPU</PlatformTarget>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\GW2EI.Library\GW2EI.Repositories\GW2EIGW2API\GW2EIGW2API.csproj" />
+        <ProjectReference Include="..\..\..\GW2EI.Library\GW2EI.Services\GW2EIParserCommons\GW2EIParserCommons.csproj" />
+    </ItemGroup>
+
+</Project>
