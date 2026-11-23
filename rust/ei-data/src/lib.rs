@@ -4,11 +4,11 @@
 //! Nothing in `generated` is typed by hand: `tools/gen/Gen-Ids.ps1` writes it from the C# files,
 //! so the values follow the upstream source.
 
-#[allow(missing_docs)]
+#[allow(missing_docs, clippy::unreadable_literal)]
 #[rustfmt::skip]
 pub mod generated;
 
-pub use generated::{effect_guids, marker_guids, skill_ids, species_ids};
+pub use generated::{buffs, effect_guids, marker_guids, skill_ids, species_ids};
 
 #[cfg(test)]
 mod tests {
@@ -38,5 +38,17 @@ mod tests {
         assert_eq!(effect_guids::GENERIC240_UNIT_RADIUS[0], 0xE7);
         assert_eq!(effect_guids::GENERIC240_UNIT_RADIUS[15], 0xA4);
         assert_eq!(marker_guids::RED_COMMANDER_TAG[0], 0x42);
+    }
+
+    #[test]
+    fn buffs_are_complete_and_resolved() {
+        use crate::buffs::{BUFFS, Classification, StackType};
+        assert_eq!(BUFFS.len(), 2372);
+        let might = BUFFS.iter().find(|b| b.name == "Might").unwrap();
+        assert_eq!(might.id, skill_ids::MIGHT);
+        assert_eq!(might.stack_type, StackType::Stacking);
+        assert_eq!(might.capacity, 25);
+        assert_eq!(might.classification, Classification::Boon);
+        assert!(BUFFS.iter().all(|b| !b.sources.is_empty()));
     }
 }
