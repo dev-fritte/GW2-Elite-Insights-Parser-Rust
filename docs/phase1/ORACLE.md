@@ -94,3 +94,8 @@ Aufruf:
 ```powershell
 cargo run --release -p evtc-oracle -- --corpus <korpus-ordner> --manifest ../docs/phase0/corpus-manifest.tsv --oracle ../docs/phase1/oracle-hashes.tsv
 ```
+
+## Ergebnis für Schicht B (Phase 3, Port von `ParseCombatList`)
+
+`ei_core::keep::keep_events` (Rust) gegen die Spalten ab `KeptCount`, 103 Logs: **0 Abweichungen in 19 Spalten** (Schicht A und B zusammen: `KeptCount`, `KeptHash`, `KeptTriggerId`, `MapId`, `LogStartOffset`, `LogEndTime`, `Gw2Build`, `KeptError`).
+Damit sind Gültigkeitsfilter, Karten- und Instanzregeln, Zeit-Normalisierung und die Erkennung der Healing-Stats-Extension bit-genau auf diesem Korpus bestätigt.
