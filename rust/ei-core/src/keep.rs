@@ -50,7 +50,7 @@ pub struct ArcVersion {
 
 impl ArcVersion {
     /// Applies an arc build record (`EvtcVersionEvent.SetFromCombatItem`): the 48 bytes of the
-    /// record after `time` are a text like `<x>-<revision>.<build>`.
+    /// record after `time` are a text like `<build>.<revision>-<x>-<platform>`.
     pub fn set_from_record(&mut self, c: &CombatRecord) {
         let old_build = self.build;
         if let Some((build, revision)) = Self::parse_record(c) {
@@ -87,10 +87,11 @@ impl ArcVersion {
         // `Encoding.UTF8.GetString(bytes).TrimEnd('\0')`; the text is ASCII in practice
         let text = String::from_utf8_lossy(&bytes);
         let text = text.trim_end_matches('\0');
-        let (head, tail) = split_once(text, '.');
-        let build = parse_dotnet_int(tail.as_bytes())?;
-        let (_, revision) = split_once(head, '-');
-        let revision = parse_dotnet_int(revision.as_bytes())?;
+        // NOTE: in the C# `SplitResult` `Tail` is the left part and `Head` the right part.
+        let (build_text, rest) = split_once(text, '.');
+        let build = parse_dotnet_int(build_text.as_bytes())?;
+        let (revision_text, _) = split_once(rest, '-');
+        let revision = parse_dotnet_int(revision_text.as_bytes())?;
         Some((build, revision))
     }
 }
@@ -505,8 +506,8 @@ mod tests {
     fn arc_build_record_sets_build_and_revision() {
         let mut c = rec(0, sc::ARC_BUILD);
         c.src_instid = 0; // the payload is only the text
-        // "20260920-204859.20260920" spread over the 48 byte payload
-        let text = b"20260920-204859.20260920";
+        // "20260920.204859-611-x64" spread over the 48 byte payload
+        let text = b"20260920.204859-611-x64";
         let mut raw = [0u8; 48];
         raw[..text.len()].copy_from_slice(text);
         c.src_agent = u64::from_le_bytes(raw[0..8].try_into().unwrap());
