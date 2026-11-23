@@ -7,9 +7,11 @@
 //! Ported from `GW2EIEvtcParser/EvtcParser.cs` of the GW2 Elite Insights parser (MIT License,
 //! Copyright (c) 2018 baaron4), see the `LICENSE` file in the repository root.
 
+mod agents;
 mod error;
 mod header;
 
+pub use agents::{AGENT_NAME_LEN, Agent, AgentTable};
 pub use error::{Error, Section};
 pub use header::Header;
 
