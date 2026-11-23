@@ -11,12 +11,14 @@ mod agents;
 mod error;
 mod evtc;
 mod header;
+mod load;
 mod skills;
 
 pub use agents::{AGENT_NAME_LEN, Agent, AgentTable};
 pub use error::{Error, Section};
 pub use evtc::Evtc;
 pub use header::Header;
+pub use load::{is_compressed_name, is_supported_name, read_archive, read_log};
 pub use skills::{SKILL_NAME_LEN, Skill, SkillTable};
 
 /// Size of the fixed header in bytes: 12 byte `EVTC<date>`, 1 byte revision, 2 byte trigger id,
