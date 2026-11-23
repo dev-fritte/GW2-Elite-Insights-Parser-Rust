@@ -20,8 +20,8 @@ foreach ($r in $ra) {
 }
 "Gleiche JSON-Hashes: $same, abweichend: $diff, fehlend in B: $missing"
 function Summ($rows, $n) {
-    $s = ($rows | ForEach-Object { [double]::Parse($_.$n, [Globalization.CultureInfo]::InvariantCulture) } | Measure-Object -Sum).Sum
-    $med = ($rows | ForEach-Object { [double]::Parse($_.$n, [Globalization.CultureInfo]::InvariantCulture) } | Sort-Object)[[int][math]::Floor($rows.Count / 2)]
+    $s = ($rows | ForEach-Object { [double]::Parse(($_.$n -replace "," , "."), [Globalization.CultureInfo]::InvariantCulture) } | Measure-Object -Sum).Sum
+    $med = ($rows | ForEach-Object { [double]::Parse(($_.$n -replace "," , "."), [Globalization.CultureInfo]::InvariantCulture) } | Sort-Object)[[int][math]::Floor($rows.Count / 2)]
     "{0,-12} Summe {1,10:N1}  Median {2,8:N1}" -f $n, $s, $med
 }
 foreach ($set in @(@("A", $ra), @("B", $rb))) {

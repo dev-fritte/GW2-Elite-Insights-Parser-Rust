@@ -17,6 +17,7 @@ param(
     [hashtable]$Env = @{},
     [string]$Filter = ''
 )
+[Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture
 $Exe = [System.IO.Path]::GetFullPath($Exe)
 New-Item -ItemType Directory -Force -Path $ResultDir | Out-Null
 if ($JsonDir) { New-Item -ItemType Directory -Force -Path $JsonDir | Out-Null }
