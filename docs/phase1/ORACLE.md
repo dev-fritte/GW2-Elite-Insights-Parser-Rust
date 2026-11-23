@@ -80,3 +80,17 @@ Für alle Logs im Manifest müssen in `oracle-hashes.tsv` übereinstimmen: `Buil
 | arcdps-Builds | 10 verschiedene, `EVTC20260705` bis `EVTC20261115` |
 | Rest-Bytes nach dem letzten Record | in keinem Log |
 | Fehler in `ParseCombatList` | in keinem Log |
+
+## Korrektur nach dem ersten Rust-Vergleich (1.2)
+
+Der erste Rust-Vergleich zeigte in allen Logs einen abweichenden `AgentsHash`. Ursache war das Orakel selbst: Der C#-Konstruktor von `AgentItem` überschreibt bei Spielern die Hitbox mit festen Werten (48 x 240). Das Orakel hat diese verarbeiteten Werte gehasht, obwohl diese Spezifikation die doppelten Rohwerte verlangt. Das Orakel liest die Hitbox-Felder jetzt direkt aus den Rohbytes. Die Tabelle wurde neu erzeugt, zwei Läufe sind byte-identisch.
+
+## Ergebnis des Rust-Vergleichs (1.2 und 1.3)
+
+`evtc-oracle` (Rust) gegen diese Tabelle, 103 Logs: **0 Abweichungen in 11 Spalten** (`BuildString`, `Revision`, `TriggerId`, `Agents`, `AgentsHash`, `SkillsRaw`, `SkillsUnique`, `SkillsHash`, `Events`, `TrailingBytes`, `EventsHash`).
+
+Aufruf:
+
+```powershell
+cargo run --release -p evtc-oracle -- --corpus <korpus-ordner> --manifest ../docs/phase0/corpus-manifest.tsv --oracle ../docs/phase1/oracle-hashes.tsv
+```
