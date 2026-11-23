@@ -122,6 +122,10 @@ pub fn find_players(
             p.group = 1;
         }
     }
+    // `RegroupSameAgentsAndDetermineTeams`: players with the same account become one agent that
+    // copies the first of them
+    let mut accounts = std::collections::HashSet::new();
+    players.retain(|p| accounts.insert(p.account.clone()));
     players.sort_by(|a, b| a.character.cmp(&b.character));
     players
 }
