@@ -1,0 +1,18 @@
+[package]
+name = "ei-core"
+description = "Event model, indices and log metadata on top of evtc-ingest."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+evtc-ingest = { path = "../evtc-ingest" }
+
+[dev-dependencies]
+proptest = "1"
