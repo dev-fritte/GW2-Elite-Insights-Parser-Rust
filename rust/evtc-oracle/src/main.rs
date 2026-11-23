@@ -94,9 +94,9 @@ fn run() -> Result<bool, Box<dyn Error>> {
 }
 
 /// Number of columns compared per log.
-const COLUMNS: usize = 10;
+const COLUMNS: usize = 11;
 
-/// Computes the oracle columns of layer A that need no event decoding.
+/// Computes the oracle columns of layer A (header, agents, skills, event area and events).
 fn summarize(data: &[u8]) -> Result<Row, evtc_ingest::Error> {
     let evtc = Evtc::parse(data)?;
     let header = evtc.header();
@@ -127,6 +127,11 @@ fn summarize(data: &[u8]) -> Result<Row, evtc_ingest::Error> {
         skills.update(name.as_bytes());
     }
 
+    let mut events = Sha256::new();
+    for record in evtc.events() {
+        events.update(record.to_canonical());
+    }
+
     Ok(vec![
         ("BuildString", header.build_string().to_string()),
         ("Revision", header.revision().to_string()),
@@ -138,6 +143,7 @@ fn summarize(data: &[u8]) -> Result<Row, evtc_ingest::Error> {
         ("SkillsHash", hex(&skills.finalize())),
         ("Events", evtc.event_count().to_string()),
         ("TrailingBytes", evtc.trailing_bytes().to_string()),
+        ("EventsHash", hex(&events.finalize())),
     ])
 }
 
