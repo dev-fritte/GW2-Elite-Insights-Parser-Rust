@@ -4,9 +4,12 @@
 //! `LICENSE` file in the repository root.
 
 pub mod csr;
+pub mod model;
 pub mod rules;
 
 /// Constants generated from the C# sources by `tools/gen`. Do not edit by hand.
 pub mod generated {
     pub mod state_change;
 }
+
+pub use model::{AgentId, Model};
