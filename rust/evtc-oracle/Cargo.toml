@@ -1,0 +1,18 @@
+[package]
+name = "evtc-oracle"
+description = "Compares evtc-ingest results with the C# oracle table (docs/phase1/oracle-hashes.tsv)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+ei-core = { path = "../ei-core" }
+evtc-ingest = { path = "../evtc-ingest" }
+sha2 = "0.10"

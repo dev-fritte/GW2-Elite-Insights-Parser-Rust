@@ -1,0 +1,18 @@
+[package]
+name = "evtc-ingest"
+description = "Zero-copy reader for arcdps EVTC logs (header, agents, skills, combat events)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+zip = { version = "9.8.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[dev-dependencies]
+proptest = "1.12.0"

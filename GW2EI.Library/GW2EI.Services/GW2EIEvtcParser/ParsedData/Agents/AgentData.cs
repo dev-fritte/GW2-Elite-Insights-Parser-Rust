@@ -49,6 +49,9 @@ public class AgentData
 
     private readonly GW2EIGW2API.GW2APIController _apiController;
 
+    // Fixed seed: ids of custom (synthetic) agents must be reproducible between runs, otherwise the JSON output differs per run.
+    private readonly Random _customAgentRandom = new(0x45494147);
+
     internal AgentData(GW2EIGW2API.GW2APIController apiController, List<AgentItem> allAgentsList, UniqueAgentIDHolder uniqueDHolder)
     {
         _apiController = apiController;
@@ -63,7 +66,7 @@ public class AgentData
 
     internal AgentItem AddCustomNPCAgent(long start, long end, string name, ParserHelper.Spec spec, int ID, bool isFake, ushort toughness = 0, ushort healing = 0, ushort condition = 0, ushort concentration = 0, uint hitboxWidth = 0, uint hitboxHeight = 0)
     {
-        var rnd = new Random();
+        var rnd = _customAgentRandom;
         ulong agentValue = 0;
         while (AgentValues.Contains(agentValue) || agentValue == 0)
         {
@@ -87,7 +90,7 @@ public class AgentData
 
     internal AgentItem AddCustomAgentFrom(AgentItem from, long start, long end, ParserHelper.Spec spec)
     {
-        var rnd = new Random();
+        var rnd = _customAgentRandom;
         ulong agentValue = 0;
         while (AgentValues.Contains(agentValue) || agentValue == 0)
         {

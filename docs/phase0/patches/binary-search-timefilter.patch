@@ -1,0 +1,121 @@
+diff --git a/GW2EI.Library/GW2EI.Services/GW2EIEvtcParser/EIData/Actors/Actor.cs b/GW2EI.Library/GW2EI.Services/GW2EIEvtcParser/EIData/Actors/Actor.cs
+index 5b41dabbd..b382eda58 100644
+--- a/GW2EI.Library/GW2EI.Services/GW2EIEvtcParser/EIData/Actors/Actor.cs
++++ b/GW2EI.Library/GW2EI.Services/GW2EIEvtcParser/EIData/Actors/Actor.cs
+@@ -130,7 +130,7 @@ public abstract class Actor
+                 {
+                     long targetStart = target.FirstAware;
+                     long targetEnd = target.LastAware;
+-                    list = damageEvents.Where(x => x.Time >= start && x.Time >= targetStart && x.Time <= end && x.Time <= targetEnd).ToList();
++                    list = damageEvents.SliceByTime(Math.Max(start, targetStart), Math.Min(end, targetEnd));
+                 }
+                 else
+                 {
+@@ -139,7 +139,7 @@ public abstract class Actor
+             }
+             else
+             {
+-                list = DamageEventByDst[ParserHelper._nullAgent].Where(x => x.Time >= start && x.Time <= end).ToList();
++                list = DamageEventByDst[ParserHelper._nullAgent].SliceByTime(start, end);
+             }
+             DamageEventByDstCache.Set(start, end, target, list);
+         }
+@@ -164,7 +164,7 @@ public abstract class Actor
+                 {
+                     long targetStart = target.FirstAware;
+                     long targetEnd = target.LastAware;
+-                    list = damageTakenEvents.Where(x => x.Time >= start && x.Time >= targetStart && x.Time <= end && x.Time <= targetEnd).ToList();
++                    list = damageTakenEvents.SliceByTime(Math.Max(start, targetStart), Math.Min(end, targetEnd));
+                 }
+                 else
+                 {
+@@ -173,7 +173,7 @@ public abstract class Actor
+             }
+             else
+             {
+-                list = DamageTakenEventsBySrc[ParserHelper._nullAgent].Where(x => x.Time >= start && x.Time <= end).ToList();
++                list = DamageTakenEventsBySrc[ParserHelper._nullAgent].SliceByTime(start, end);
+             }
+             DamageTakenEventsBySrcCache.Set(start, end, target, list);
+         }
+@@ -271,7 +271,7 @@ public abstract class Actor
+                 {
+                     long targetStart = target.FirstAware;
+                     long targetEnd = target.LastAware;
+-                    list = breakbarDamageEvents.Where(x => x.Time >= start && x.Time >= targetStart && x.Time <= end && x.Time <= targetEnd).ToList();
++                    list = breakbarDamageEvents.SliceByTime(Math.Max(start, targetStart), Math.Min(end, targetEnd));
+                 }
+                 else
+                 {
+@@ -280,7 +280,7 @@ public abstract class Actor
+             }
+             else
+             {
+-                list = BreakbarDamageEventsByDst[ParserHelper._nullAgent].Where(x => x.Time >= start && x.Time <= end).ToList();
++                list = BreakbarDamageEventsByDst[ParserHelper._nullAgent].SliceByTime(start, end);
+             }
+             BreakbarDamageEventByDstCache.Set(start, end, target, list);
+         }
+@@ -304,7 +304,7 @@ public abstract class Actor
+                 {
+                     long targetStart = target.FirstAware;
+                     long targetEnd = target.LastAware;
+-                    list = breakbarDamageEvents.Where(x => x.Time >= start && x.Time >= targetStart && x.Time <= end && x.Time <= targetEnd).ToList();
++                    list = breakbarDamageEvents.SliceByTime(Math.Max(start, targetStart), Math.Min(end, targetEnd));
+                 }
+                 else
+                 {
+@@ -313,7 +313,7 @@ public abstract class Actor
+             }
+             else
+             {
+-                list = BreakbarDamageTakenEventsBySrc[ParserHelper._nullAgent].Where(x => x.Time >= start && x.Time <= end).ToList();
++                list = BreakbarDamageTakenEventsBySrc[ParserHelper._nullAgent].SliceByTime(start, end);
+             }
+             BreakbarDamageTakenEventBySrcCache.Set(start, end, target, list);
+         }
+@@ -339,7 +339,7 @@ public abstract class Actor
+                 {
+                     long targetStart = target.FirstAware;
+                     long targetEnd = target.LastAware;
+-                    list = ccEvents.Where(x => x.Time >= start && x.Time >= targetStart && x.Time <= end && x.Time <= targetEnd).ToList();
++                    list = ccEvents.SliceByTime(Math.Max(start, targetStart), Math.Min(end, targetEnd));
+                 }
+                 else
+                 {
+@@ -348,7 +348,7 @@ public abstract class Actor
+             }
+             else
+             {
+-                list = OutgoingCrowdControlEventsByDst[ParserHelper._nullAgent].Where(x => x.Time >= start && x.Time <= end).ToList();
++                list = OutgoingCrowdControlEventsByDst[ParserHelper._nullAgent].SliceByTime(start, end);
+             }
+             OutgoingCrowdControlEventByDstCache.Set(start, end, target, list);
+         }
+@@ -372,7 +372,7 @@ public abstract class Actor
+                 {
+                     long targetStart = target.FirstAware;
+                     long targetEnd = target.LastAware;
+-                    list = ccEvents.Where(x => x.Time >= start && x.Time >= targetStart && x.Time <= end && x.Time <= targetEnd).ToList();
++                    list = ccEvents.SliceByTime(Math.Max(start, targetStart), Math.Min(end, targetEnd));
+                 }
+                 else
+                 {
+@@ -381,7 +381,7 @@ public abstract class Actor
+             }
+             else
+             {
+-                list = IncomingCrowdControlEventsBySrc[ParserHelper._nullAgent].Where(x => x.Time >= start && x.Time <= end).ToList();
++                list = IncomingCrowdControlEventsBySrc[ParserHelper._nullAgent].SliceByTime(start, end);
+             }
+             IncomingCrowdControlEventBySrcCache.Set(start, end, target, list);
+         }
+@@ -403,7 +403,7 @@ public abstract class Actor
+         _castEventsCache ??= new CachingCollection<List<CastEvent>>(log);
+         if (!_castEventsCache.TryGetValue(start, end, out var list))
+         {
+-            list = CastEvents.Where(x => x.Time >= start && x.Time <= end).ToList();
++            list = CastEvents.SliceByTime(start, end);
+             _castEventsCache.Set(start, end, list);
+         }
+         return list;
