@@ -5,15 +5,18 @@ use std::fmt;
 use evtc_ingest::Evtc;
 use serde_json::{Map, Value, json};
 
-use crate::api::MapList;
+use crate::api::Api;
 use crate::keep::{KeepError, KeepSettings, keep_events};
 use crate::meta::{Metadata, extract};
+use crate::players::{Player, find_players};
 
 /// What the core knows about a log.
 #[derive(Debug, Clone)]
 pub struct Analysis {
     /// Log level metadata.
     pub metadata: Metadata,
+    /// Squad players, sorted by character name.
+    pub players: Vec<Player>,
 }
 
 /// Why a log could not be analysed.
@@ -52,7 +55,7 @@ impl From<KeepError> for AnalysisError {
 ///
 /// # Errors
 /// [`AnalysisError`] if the log is malformed, too short, too long or has no combat records.
-pub fn analyze(data: &[u8], maps: Option<&MapList>) -> Result<Analysis, AnalysisError> {
+pub fn analyze(data: &[u8], api: &Api) -> Result<Analysis, AnalysisError> {
     let evtc = Evtc::parse(data)?;
     let header = evtc.header();
     let records: Vec<_> = evtc.events().collect();
@@ -62,8 +65,10 @@ pub fn analyze(data: &[u8], maps: Option<&MapList>) -> Result<Analysis, Analysis
         header.build(),
         KeepSettings::default(),
     )?;
+    let players = find_players(evtc.agents(), &kept, &api.specs, false);
     Ok(Analysis {
-        metadata: extract(&kept, maps),
+        metadata: extract(&kept, Some(&api.maps)),
+        players,
     })
 }
 
@@ -94,6 +99,19 @@ pub fn to_json(analysis: &Analysis) -> Value {
     if let Some(end) = m.log_end_unix {
         o.insert("coreLogEndUnix".into(), json!(end));
     }
+    let players: Vec<Value> = analysis
+        .players
+        .iter()
+        .map(|p| {
+            json!({
+                "name": p.character,
+                "account": p.account,
+                "group": p.group,
+                "profession": p.profession,
+            })
+        })
+        .collect();
+    o.insert("players".into(), Value::Array(players));
     Value::Object(o)
 }
 
@@ -104,7 +122,7 @@ mod tests {
     #[test]
     fn rejects_data_that_is_not_a_log() {
         assert!(matches!(
-            analyze(b"hello", None),
+            analyze(b"hello", &Api::default()),
             Err(AnalysisError::Ingest(_))
         ));
     }
@@ -116,7 +134,7 @@ mod tests {
         data.extend_from_slice(&0u32.to_le_bytes());
         data.extend_from_slice(&0u32.to_le_bytes());
         assert!(matches!(
-            analyze(&data, None),
+            analyze(&data, &Api::default()),
             Err(AnalysisError::Keep(KeepError::NoEvents))
         ));
     }

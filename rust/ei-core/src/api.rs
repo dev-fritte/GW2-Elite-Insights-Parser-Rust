@@ -5,6 +5,31 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use crate::spec::SpecList;
+
+/// The API data the core uses. `Default` is empty: regions of logs without a world id and
+/// profession names of newer specialisations then stay unknown.
+#[derive(Debug, Clone, Default)]
+pub struct Api {
+    /// Map types.
+    pub maps: MapList,
+    /// Specialisations.
+    pub specs: SpecList,
+}
+
+impl Api {
+    /// Loads `MapList.json` and `SpecList.json` from the `Content` directory of the C# parser.
+    ///
+    /// # Errors
+    /// If a file is missing or not valid.
+    pub fn load(content_dir: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self {
+            maps: MapList::load(&content_dir.join("MapList.json"))?,
+            specs: SpecList::load(&content_dir.join("SpecList.json"))?,
+        })
+    }
+}
+
 /// Map ids and their API type (`"Public"`, `"Instance"`, ...), read from `MapList.json`.
 #[derive(Debug, Clone, Default)]
 pub struct MapList {
