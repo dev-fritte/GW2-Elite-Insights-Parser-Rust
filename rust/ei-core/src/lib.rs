@@ -10,6 +10,7 @@ pub mod meta;
 pub mod model;
 pub mod pipeline;
 pub mod rules;
+pub mod spec;
 
 /// Constants generated from the C# sources by `tools/gen`. Do not edit by hand.
 pub mod generated {
