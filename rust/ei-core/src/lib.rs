@@ -3,6 +3,7 @@
 //! Ported from the GW2 Elite Insights parser (MIT License, Copyright (c) 2018 baaron4), see the
 //! `LICENSE` file in the repository root.
 
+pub mod api;
 pub mod csr;
 pub mod keep;
 pub mod model;
