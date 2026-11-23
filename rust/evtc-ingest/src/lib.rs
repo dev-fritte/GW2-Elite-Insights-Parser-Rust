@@ -9,11 +9,13 @@
 
 mod agents;
 mod error;
+mod evtc;
 mod header;
 mod skills;
 
 pub use agents::{AGENT_NAME_LEN, Agent, AgentTable};
 pub use error::{Error, Section};
+pub use evtc::Evtc;
 pub use header::Header;
 pub use skills::{SKILL_NAME_LEN, Skill, SkillTable};
 
