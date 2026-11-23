@@ -19,7 +19,7 @@ pub use agents::{AGENT_NAME_LEN, Agent, AgentTable};
 pub use error::{Error, Section};
 pub use events::{CombatRecord, EventIter, STATE_CHANGE_UNKNOWN};
 pub use evtc::Evtc;
-pub use header::Header;
+pub use header::{Header, parse_dotnet_int};
 pub use load::{is_compressed_name, is_supported_name, read_archive, read_log};
 pub use skills::{SKILL_NAME_LEN, Skill, SkillTable};
 

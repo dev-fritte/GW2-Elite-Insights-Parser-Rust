@@ -76,9 +76,10 @@ impl<'a> Header<'a> {
     }
 }
 
-/// Subset of .NET `int.TryParse(string)` with `NumberStyles.Integer`: leading and trailing
+/// Subset of .NET `int.TryParse(string)` (and `int.Parse`, which accepts the same text) with `NumberStyles.Integer`: leading and trailing
 /// white space (and trailing NUL characters), one optional sign, at least one digit.
-fn parse_dotnet_int(text: &[u8]) -> Option<i32> {
+#[must_use]
+pub fn parse_dotnet_int(text: &[u8]) -> Option<i32> {
     let is_space = |b: u8| matches!(b, b' ' | b'\t' | b'\n' | 0x0B | 0x0C | b'\r');
     let mut end = text.len();
     while end > 0 && (text[end - 1] == 0 || is_space(text[end - 1])) {
