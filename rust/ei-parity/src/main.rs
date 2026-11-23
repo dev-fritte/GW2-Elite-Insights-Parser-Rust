@@ -2,7 +2,7 @@
 //! of the corpus manifest.
 //!
 //! ```text
-//! ei-parity --corpus <root> --manifest <corpus-manifest.tsv> --reference <dir> --maps <MapList.json>
+//! ei-parity --corpus <root> --manifest <corpus-manifest.tsv> --reference <dir> --content <dir>
 //! ```
 //!
 //! `<dir>` holds `<TargetId>_<File>.json` as written by `GW2EIParserReference`. Exit code 0 if
@@ -13,7 +13,7 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use ei_core::api::MapList;
+use ei_core::api::Api;
 use ei_core::pipeline::{analyze, to_json};
 use evtc_ingest::read_log;
 use serde_json::Value;
@@ -47,12 +47,12 @@ struct Options {
     corpus: PathBuf,
     manifest: PathBuf,
     reference: PathBuf,
-    maps: Option<PathBuf>,
+    content: Option<PathBuf>,
     verbose: bool,
 }
 
 fn options() -> Result<Options, Box<dyn Error>> {
-    let (mut corpus, mut manifest, mut reference, mut maps) = (None, None, None, None);
+    let (mut corpus, mut manifest, mut reference, mut content) = (None, None, None, None);
     let mut verbose = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -68,7 +68,7 @@ fn options() -> Result<Options, Box<dyn Error>> {
             "--corpus" => corpus = Some(value),
             "--manifest" => manifest = Some(value),
             "--reference" => reference = Some(value),
-            "--maps" => maps = Some(value),
+            "--content" => content = Some(value),
             _ => return Err(format!("unknown argument {arg}").into()),
         }
     }
@@ -76,7 +76,7 @@ fn options() -> Result<Options, Box<dyn Error>> {
         corpus: corpus.ok_or("--corpus is required")?,
         manifest: manifest.ok_or("--manifest is required")?,
         reference: reference.ok_or("--reference is required")?,
-        maps,
+        content,
         verbose,
     })
 }
@@ -91,7 +91,10 @@ struct FieldStats {
 
 fn run() -> Result<bool, Box<dyn Error>> {
     let opts = options()?;
-    let maps = opts.maps.as_deref().map(MapList::load).transpose()?;
+    let api = match opts.content.as_deref() {
+        Some(dir) => Api::load(dir)?,
+        None => Api::default(),
+    };
     let manifest = read_manifest(&opts.manifest)?;
 
     let mut stats: BTreeMap<String, FieldStats> = BTreeMap::new();
@@ -107,7 +110,7 @@ fn run() -> Result<bool, Box<dyn Error>> {
 
         let ours = match read_log(&log_path)
             .map_err(|e| e.to_string())
-            .and_then(|d| analyze(&d, maps.as_ref()).map_err(|e| e.to_string()))
+            .and_then(|d| analyze(&d, &api).map_err(|e| e.to_string()))
         {
             Ok(a) => to_json(&a),
             Err(e) => {
@@ -129,6 +132,7 @@ fn run() -> Result<bool, Box<dyn Error>> {
                 reference.get(*field),
             );
         }
+        compare_players(&mut stats, &label, &ours, &reference);
         for (ours_key, reference_key) in [
             ("coreLogStartUnix", "timeStartStd"),
             ("coreLogEndUnix", "timeEndStd"),
@@ -166,6 +170,57 @@ fn run() -> Result<bool, Box<dyn Error>> {
         }
     }
     Ok(all_match)
+}
+
+/// The fields of a player the core computes, as a comparable key.
+fn player_key(player: &Value) -> String {
+    let text = |key: &str| player.get(key).map_or(String::new(), ToString::to_string);
+    format!(
+        "{}|{}|{}|{}",
+        text("name"),
+        text("account"),
+        text("group"),
+        text("profession")
+    )
+}
+
+/// Compares the player lists as sets of (name, account, group, profession): the C# list is sorted
+/// with a culture sensitive comparison that is not reproduced here.
+fn compare_players(
+    stats: &mut BTreeMap<String, FieldStats>,
+    label: &str,
+    ours: &Value,
+    reference: &Value,
+) {
+    let keys = |v: &Value| {
+        let mut keys: Vec<String> = v
+            .get("players")
+            .and_then(Value::as_array)
+            .map(|players| {
+                players
+                    .iter()
+                    // friendly NPCs are added by the encounter logic, which is not ported
+                    .filter(|p| p.get("friendlyNPC").and_then(Value::as_bool) != Some(true))
+                    .map(player_key)
+                    .collect()
+            })
+            .unwrap_or_default();
+        keys.sort();
+        keys
+    };
+    let (a, b) = (keys(ours), keys(reference));
+    let s = stats.entry("players".to_string()).or_default();
+    s.compared += 1;
+    if a != b {
+        s.mismatches += 1;
+        let missing = b.iter().filter(|k| !a.contains(k)).count();
+        let extra = a.iter().filter(|k| !b.contains(k)).count();
+        s.examples.push(format!(
+            "{label}: rust has {} players, reference {}; {missing} reference players missing, {extra} extra",
+            a.len(),
+            b.len()
+        ));
+    }
 }
 
 fn record(
