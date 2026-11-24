@@ -411,6 +411,8 @@ pub struct OffsetAnalysis {
     pub targets: Vec<crate::encounter::Target>,
     /// The breakbar phases of the targets, with times relative to the start of the fight.
     pub breakbar_phases: Vec<crate::phases::BreakbarPhase>,
+    /// The sub phases of the encounter, if its logic is ported.
+    pub sub_phases: Option<Vec<crate::subphases::SubPhase>>,
 }
 
 /// Determines the encounter offset of a log.
@@ -444,6 +446,12 @@ pub fn analyze_offset(data: &[u8]) -> Result<OffsetAnalysis, AnalysisError> {
         fight_end,
         log_end: kept.log_end_time,
         trigger_id: kept.trigger_id,
+        sub_phases: crate::subphases::encounter_phases(
+            &kept,
+            &targets,
+            offset.unwrap_or(0),
+            duration,
+        ),
         breakbar_phases: crate::phases::breakbar_phases(
             &kept,
             &targets,

@@ -16,6 +16,9 @@ pub struct OffsetStats {
     pub breakbar_ok: usize,
     pub breakbar_compared: usize,
     pub breakbar_examples: Vec<String>,
+    pub sub_ok: usize,
+    pub sub_compared: usize,
+    pub sub_examples: Vec<String>,
     pub examples: Vec<String>,
 }
 
@@ -23,6 +26,7 @@ pub struct OffsetStats {
 ///
 /// # Errors
 /// The text of the analysis error.
+#[allow(clippy::too_many_lines)]
 pub fn compare_log(
     data: &[u8],
     reference: &Value,
@@ -98,6 +102,44 @@ pub fn compare_log(
             s.breakbar_examples.push(format!(
                 "{label}: rust {ours_phases:?} reference {expected:?}"
             ));
+        }
+    }
+    // sub phases of the encounters that are ported
+    if our_targets == expected_targets
+        && let Some(phases) = &ours.sub_phases
+    {
+        let mut expected: Vec<(i64, i64)> = reference
+            .get("phases")
+            .and_then(Value::as_array)
+            .map(|p| {
+                p.iter()
+                    .filter(|x| {
+                        // the sub phases and the plain time frames, but not the breakbar phases
+                        x.get("breakbarPhase").and_then(Value::as_bool) != Some(true)
+                            && matches!(
+                                x.get("phaseType").and_then(Value::as_str),
+                                Some("SubPhase" | "TimeFrame")
+                            )
+                    })
+                    // the golems also have phases of the point of view, which are not ported
+                    .filter(|x| {
+                        !x.get("name")
+                            .and_then(Value::as_str)
+                            .is_some_and(|n| n.starts_with("In Combat"))
+                    })
+                    .filter_map(|x| Some((x.get("start")?.as_i64()?, x.get("end")?.as_i64()?)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut mine: Vec<(i64, i64)> = phases.iter().map(|p| (p.start, p.end)).collect();
+        expected.sort_unstable();
+        mine.sort_unstable();
+        s.sub_compared += 1;
+        if mine == expected {
+            s.sub_ok += 1;
+        } else if s.sub_examples.len() < 3 {
+            s.sub_examples
+                .push(format!("{label}: rust {mine:?} reference {expected:?}"));
         }
     }
     if (!offset_ok || !duration_ok) && s.examples.len() < 3 {

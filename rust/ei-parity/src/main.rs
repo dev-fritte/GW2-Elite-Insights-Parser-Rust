@@ -326,6 +326,17 @@ fn run() -> Result<bool, Box<dyn Error>> {
                 }
             }
         }
+        let sub: usize = offset_stats.values().map(|s| s.sub_ok).sum();
+        let sub_compared: usize = offset_stats.values().map(|s| s.sub_compared).sum();
+        println!("sub phases: {sub}/{sub_compared} logs identical");
+        for (folder, s) in &offset_stats {
+            if s.sub_ok != s.sub_compared {
+                println!("  {folder}: sub phases {}/{}", s.sub_ok, s.sub_compared);
+                for e in &s.sub_examples {
+                    println!("      {e}");
+                }
+            }
+        }
         if offsets != logs || durations != logs {
             all_match = false;
         }

@@ -38,7 +38,7 @@ fn add_segment(list: &mut Vec<Segment>, start: i64, end: i64) {
 }
 
 /// The times a target is neither down, dead nor gone (`SingleActor.FillStatus`).
-fn active_segments(events: &[(i64, u8)], first: i64, last: i64) -> Vec<Segment> {
+pub(crate) fn active_segments(events: &[(i64, u8)], first: i64, last: i64) -> Vec<Segment> {
     let mut actives = Vec::new();
     if events.is_empty() {
         add_segment(&mut actives, first, last);
