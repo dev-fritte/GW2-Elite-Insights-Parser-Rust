@@ -4,6 +4,7 @@
 //! `LICENSE` file in the repository root.
 
 pub mod api;
+pub mod buff_events;
 pub mod csr;
 pub mod keep;
 pub mod meta;

@@ -26,6 +26,8 @@ pub enum AnalysisError {
     Ingest(evtc_ingest::Error),
     /// The record filter rejected the log.
     Keep(KeepError),
+    /// A buff could not be simulated.
+    Buff(crate::buff_events::Error),
 }
 
 impl fmt::Display for AnalysisError {
@@ -33,6 +35,7 @@ impl fmt::Display for AnalysisError {
         match self {
             Self::Ingest(e) => write!(f, "{e}"),
             Self::Keep(e) => write!(f, "{e}"),
+            Self::Buff(e) => write!(f, "{e}"),
         }
     }
 }
@@ -113,6 +116,66 @@ pub fn to_json(analysis: &Analysis) -> Value {
         .collect();
     o.insert("players".into(), Value::Array(players));
     Value::Object(o)
+}
+
+/// The buff simulation of every squad player.
+#[derive(Debug, Clone)]
+pub struct PlayerBuffs {
+    /// The player.
+    pub player: Player,
+    /// All simulated buffs of the player.
+    pub buffs: Vec<crate::buff_events::BuffResult>,
+}
+
+/// Simulation result of all players of a log, with the time span it covers.
+#[derive(Debug, Clone)]
+pub struct BuffAnalysis {
+    /// Start of the simulated span.
+    pub log_start: i64,
+    /// End of the simulated span.
+    pub log_end: i64,
+    /// Buffs per player.
+    pub players: Vec<PlayerBuffs>,
+}
+
+/// Simulates the buffs of all squad players of a log.
+///
+/// # Errors
+/// [`AnalysisError`] for unreadable logs, or a buff error as `Buff`.
+pub fn analyze_buffs(
+    data: &[u8],
+    api: &Api,
+    time_offset: i64,
+    duration: Option<i64>,
+) -> Result<BuffAnalysis, AnalysisError> {
+    let evtc = Evtc::parse(data)?;
+    let header = evtc.header();
+    let records: Vec<_> = evtc.events().collect();
+    let kept = keep_events(
+        &records,
+        header.trigger_id(),
+        header.build(),
+        KeepSettings::default(),
+    )?;
+    let players = find_players(evtc.agents(), &kept, &api.specs, false);
+    let ctx = crate::buff_events::LogContext {
+        kept: &kept,
+        gw2_build: kept.gw2_build,
+        log_start: 0,
+        time_offset,
+        log_end: duration.unwrap_or(kept.log_end_time - time_offset),
+    };
+    let mut out = Vec::with_capacity(players.len());
+    for player in players {
+        let buffs = crate::buff_events::simulate_agent(&ctx, player.address)
+            .map_err(AnalysisError::Buff)?;
+        out.push(PlayerBuffs { player, buffs });
+    }
+    Ok(BuffAnalysis {
+        log_start: 0,
+        log_end: ctx.log_end,
+        players: out,
+    })
 }
 
 #[cfg(test)]

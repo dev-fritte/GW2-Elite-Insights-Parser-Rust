@@ -183,6 +183,8 @@ dependencies = [
 name = "ei-core"
 version = "0.1.0"
 dependencies = [
+ "ei-buffs",
+ "ei-data",
  "evtc-ingest",
  "proptest",
  "serde",
