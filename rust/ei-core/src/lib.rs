@@ -6,6 +6,7 @@
 pub mod api;
 pub mod buff_events;
 pub mod csr;
+pub mod damage;
 pub mod keep;
 pub mod meta;
 pub mod model;

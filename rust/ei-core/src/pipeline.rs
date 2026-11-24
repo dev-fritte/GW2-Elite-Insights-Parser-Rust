@@ -28,6 +28,8 @@ pub enum AnalysisError {
     Keep(KeepError),
     /// A buff could not be simulated.
     Buff(crate::buff_events::Error),
+    /// The damage of the log cannot be computed.
+    Damage(String),
 }
 
 impl fmt::Display for AnalysisError {
@@ -36,6 +38,7 @@ impl fmt::Display for AnalysisError {
             Self::Ingest(e) => write!(f, "{e}"),
             Self::Keep(e) => write!(f, "{e}"),
             Self::Buff(e) => write!(f, "{e}"),
+            Self::Damage(e) => write!(f, "{e}"),
         }
     }
 }
@@ -186,6 +189,58 @@ pub fn analyze_buffs(
         log_end: ctx.log_end,
         players: out,
     })
+}
+
+/// Damage totals of every squad player.
+#[derive(Debug, Clone)]
+pub struct PlayerDamage {
+    /// The player.
+    pub player: Player,
+    /// Damage to foes over the whole log.
+    pub totals: crate::damage::DamageTotals,
+}
+
+/// Computes the damage of all squad players of a log.
+///
+/// # Errors
+/// [`AnalysisError`] for unreadable logs or logs of unsupported arcdps builds.
+pub fn analyze_damage(
+    data: &[u8],
+    api: &Api,
+    time_offset: i64,
+    duration: Option<i64>,
+) -> Result<Vec<PlayerDamage>, AnalysisError> {
+    let evtc = Evtc::parse(data)?;
+    let header = evtc.header();
+    let records: Vec<_> = evtc.events().collect();
+    let kept = keep_events(
+        &records,
+        header.trigger_id(),
+        header.build(),
+        KeepSettings::default(),
+    )?;
+    let players = find_players(evtc.agents(), &kept, &api.specs, false);
+    let ctx = crate::buff_events::LogContext {
+        kept: &kept,
+        gw2_build: kept.gw2_build,
+        log_start: 0,
+        time_offset,
+        log_end: duration.unwrap_or(kept.log_end_time - time_offset),
+    };
+    let species = crate::damage::barrier_negated_species(header.trigger_id());
+    let negated: std::collections::HashSet<u64> = evtc
+        .agents()
+        .iter()
+        .filter(|a| a.is_elite() == 0xFFFF_FFFF && species.contains(&a.profession()))
+        .map(|a| a.address())
+        .collect();
+    let mut out = Vec::with_capacity(players.len());
+    for player in players {
+        let totals = crate::damage::actor_damage(&ctx, player.address, &negated)
+            .map_err(|e| AnalysisError::Damage(e.to_string()))?;
+        out.push(PlayerDamage { player, totals });
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
