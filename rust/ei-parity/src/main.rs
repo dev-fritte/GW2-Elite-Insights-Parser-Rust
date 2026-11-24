@@ -10,6 +10,7 @@
 
 mod buffs;
 mod damage;
+mod offset;
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -46,6 +47,7 @@ fn main() -> ExitCode {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 struct Options {
     corpus: PathBuf,
     manifest: PathBuf,
@@ -54,6 +56,7 @@ struct Options {
     verbose: bool,
     buffs: bool,
     damage: bool,
+    offsets: bool,
 }
 
 fn options() -> Result<Options, Box<dyn Error>> {
@@ -61,8 +64,13 @@ fn options() -> Result<Options, Box<dyn Error>> {
     let mut verbose = false;
     let mut with_buffs = false;
     let mut with_damage = false;
+    let mut with_offsets = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
+        if arg == "--offsets" {
+            with_offsets = true;
+            continue;
+        }
         if arg == "--damage" {
             with_damage = true;
             continue;
@@ -95,6 +103,7 @@ fn options() -> Result<Options, Box<dyn Error>> {
         verbose,
         buffs: with_buffs,
         damage: with_damage,
+        offsets: with_offsets,
     })
 }
 
@@ -122,6 +131,7 @@ fn run() -> Result<bool, Box<dyn Error>> {
     let mut buff_failed = 0usize;
     let mut damage_stats: BTreeMap<&'static str, damage::DamageStats> = BTreeMap::new();
     let mut damage_failed = 0usize;
+    let mut offset_stats: BTreeMap<String, offset::OffsetStats> = BTreeMap::new();
     let mut buff_extra: BTreeMap<i64, buffs::BuffStats> = BTreeMap::new();
 
     for entry in &manifest {
@@ -162,6 +172,13 @@ fn run() -> Result<bool, Box<dyn Error>> {
             buff_failed += 1;
         }
 
+        if opts.offsets
+            && let Ok(d) = &data
+            && let Err(e) =
+                offset::compare_log(d, &reference, &entry.folder, &label, &mut offset_stats)
+        {
+            println!("OFFSET FAIL {label}: {e}");
+        }
         if opts.damage
             && let Ok(d) = &data
             && let Err(e) = damage::compare_log(d, &api, &reference, &label, &mut damage_stats)
@@ -214,6 +231,26 @@ fn run() -> Result<bool, Box<dyn Error>> {
             for example in s.examples.iter().take(if opts.verbose { 50 } else { 3 }) {
                 println!("    {example}");
             }
+        }
+    }
+    if opts.offsets {
+        let logs: usize = offset_stats.values().map(|s| s.logs).sum();
+        let offsets: usize = offset_stats.values().map(|s| s.offset_ok).sum();
+        let durations: usize = offset_stats.values().map(|s| s.duration_ok).sum();
+        println!("encounter offsets: {offsets}/{logs} identical, durations {durations}/{logs}");
+        for (folder, s) in &offset_stats {
+            if s.offset_ok != s.logs || s.duration_ok != s.logs {
+                println!(
+                    "  {folder}: offset {}/{}, duration {}/{}",
+                    s.offset_ok, s.logs, s.duration_ok, s.logs
+                );
+                for e in &s.examples {
+                    println!("      {e}");
+                }
+            }
+        }
+        if offsets != logs || durations != logs {
+            all_match = false;
         }
     }
     if opts.damage {
