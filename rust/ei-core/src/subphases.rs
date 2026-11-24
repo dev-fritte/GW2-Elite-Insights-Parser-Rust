@@ -265,11 +265,11 @@ impl Fight<'_> {
         phases
     }
 
-    /// The animated casts of a skill by a target: (start, end) of each.
-    fn animated_casts(&self, target: &Target, skill_id: i64) -> Vec<(i64, i64)> {
+    /// The animated casts of skills by a target: (start, end, skill) of each, by start.
+    fn animated_casts_of(&self, target: &Target, skill_ids: &[i64]) -> Vec<(i64, i64, i64)> {
         let events: Vec<&CombatRecord> = self
             .of_target(target, &[sc::ANIMATION_START, sc::ANIMATION_STOP])
-            .filter(|e| i64::from(e.skill_id) == skill_id)
+            .filter(|e| skill_ids.contains(&i64::from(e.skill_id)))
             .collect();
         let mut casts = Vec::new();
         for (i, e) in events.iter().enumerate() {
@@ -279,13 +279,65 @@ impl Fight<'_> {
             let start = e.time - self.offset;
             let end = events[i + 1..]
                 .iter()
-                .find(|n| n.state_change == sc::ANIMATION_STOP)
+                .find(|n| n.state_change == sc::ANIMATION_STOP && n.skill_id == e.skill_id)
                 .map_or(start, |n| n.time - self.offset);
             if (0..=self.duration).contains(&start) {
-                casts.push((start, end));
+                casts.push((start, end, i64::from(e.skill_id)));
             }
         }
         casts
+    }
+
+    /// The animated casts of one skill by a target: (start, end) of each.
+    fn animated_casts(&self, target: &Target, skill_id: i64) -> Vec<(i64, i64)> {
+        self.animated_casts_of(target, &[skill_id])
+            .into_iter()
+            .map(|(s, e, _)| (s, e))
+            .collect()
+    }
+
+    /// Sabir: a phase ends with each walloping wind and the next one starts with the attack that
+    /// follows it.
+    fn sabir(&self, main: usize) -> Vec<SubPhase> {
+        let target = &self.targets[main];
+        let casts = self.animated_casts_of(
+            target,
+            &[
+                skill::WALLOPING_WIND,
+                skill::STORMS_EDGE_RIGHT_HAND,
+                skill::STORMS_EDGE_LEFT_HAND,
+                skill::CHAIN_LIGHTNING,
+            ],
+        );
+        let mut phases = Vec::new();
+        let mut start = 0;
+        let mut count = 0;
+        for &(time, end, _) in casts.iter().filter(|c| c.2 == skill::WALLOPING_WIND) {
+            phases.push(SubPhase {
+                start,
+                end: time,
+                targets: Vec::new(),
+            });
+            let Some(next) = casts
+                .iter()
+                .find(|c| c.0 >= end && c.2 != skill::WALLOPING_WIND)
+            else {
+                break;
+            };
+            start = next.0;
+            count += 1;
+        }
+        if count > 0 {
+            phases.push(SubPhase {
+                start,
+                end: self.duration,
+                targets: Vec::new(),
+            });
+        }
+        for phase in &mut phases {
+            self.add_target(phase, main);
+        }
+        phases
     }
 
     /// Slothasor: the fight is split by his narcolepsy casts.
@@ -461,6 +513,20 @@ pub fn encounter_phases(
         ),
         species::SABETHA => fight.sabetha(main),
         species::SLOTHASOR => fight.slothasor(main),
+        species::SABIR => fight.sabir(main),
+        species::ICEBROOD_CONSTRUCT => {
+            let mut phases = fight.by_invuln(
+                &[skill::INVULNERABILITY757],
+                main,
+                false,
+                true,
+                (0, duration),
+            );
+            for phase in &mut phases {
+                fight.add_target(phase, main);
+            }
+            phases
+        }
         species::ENSOLYSS => {
             // every phase belongs to Ensolyss himself
             let mut phases =
