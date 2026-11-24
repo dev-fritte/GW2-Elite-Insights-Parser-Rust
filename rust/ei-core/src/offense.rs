@@ -5,8 +5,9 @@
 //! control, the status durations, boon strips and cleanses, dodges, and breakbar damage taken.
 
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
-use ei_data::buffs::{BUFFS, Classification};
+use ei_data::buffs::Classification;
 
 use crate::buff_events::LogContext;
 use crate::damage::{UnsupportedBuild, condition_ids};
@@ -214,6 +215,27 @@ pub struct SupportStats {
     pub boon_strips_time: f64,
 }
 
+/// The records that can be damage the agent (or its minions) deals: the whole log is looked at
+/// once per agent, the statistics then only look at these.
+#[must_use]
+pub fn dealt_events(kept: &crate::keep::Kept, address: u64) -> Vec<&evtc_ingest::CombatRecord> {
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    let instid = kept
+        .events
+        .iter()
+        .find(|e| e.src_agent != 0 && redirect(e.src_agent) == address && e.src_instid != 0)
+        .map_or(0, |e| e.src_instid);
+    kept.events
+        .iter()
+        .filter(|e| {
+            e.state_change == sc::COMBAT
+                && e.src_agent != 0
+                && (redirect(e.src_agent) == address
+                    || (e.src_master_instid != 0 && e.src_master_instid == instid))
+        })
+        .collect()
+}
+
 /// Damage of the agent at `address` to foes (`only_to`: just to those targets), like
 /// `OffensiveStatistics`.
 ///
@@ -222,6 +244,7 @@ pub struct SupportStats {
 #[allow(clippy::implicit_hasher)]
 pub fn offensive_stats(
     ctx: &LogContext<'_>,
+    events: &[&evtc_ingest::CombatRecord],
     address: u64,
     barrier_negated: &HashSet<u64>,
     only_to: Option<&HashSet<u64>>,
@@ -238,7 +261,7 @@ pub fn offensive_stats(
         .find(|e| e.src_agent != 0 && redirect(e.src_agent) == address && e.src_instid != 0)
         .map_or(0, |e| e.src_instid);
     let mut s = OffensiveStats::default();
-    for e in &kept.events {
+    for e in events.iter().copied() {
         if e.state_change != sc::COMBAT {
             continue;
         }
@@ -460,21 +483,11 @@ fn seconds(ms: i64) -> f64 {
 }
 
 /// The ids of the buffs of a classification that exist in the log.
-fn buff_ids(ctx: &LogContext<'_>, classification: Classification) -> HashSet<i64> {
-    BUFFS
-        .iter()
-        .filter(|d| {
-            ctx.gw2_build < d.max_build
-                && ctx.gw2_build >= d.min_build
-                && ctx.kept.version.build < d.max_evtc_build
-                && ctx.kept.version.build >= d.min_evtc_build
-        })
-        .filter(|d| d.classification == classification)
-        .map(|d| d.id)
-        .collect()
+fn buff_ids(ctx: &LogContext<'_>, classification: Classification) -> Rc<HashSet<i64>> {
+    crate::damage::classified_ids(ctx, classification)
 }
 
-/// Strips and cleanses the agent at ddress did, like `SupportStatistics`. `players` are the
+/// Strips and cleanses the agent at `address` did, like `SupportStatistics`. `players` are the
 /// addresses of the squad players.
 ///
 /// # Errors

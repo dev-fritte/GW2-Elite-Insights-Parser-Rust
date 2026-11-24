@@ -5,7 +5,9 @@
 //! Supported: logs of arcdps build 20260501 and later (`ResultEnumRework`). Not ported: damage of
 //! minions, damage taken, breakbar damage, encounter specific changes of damage events.
 
-use std::collections::HashSet;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use ei_data::buffs::{BUFFS, Classification};
 
@@ -86,21 +88,44 @@ impl std::fmt::Display for UnsupportedBuild {
 
 impl std::error::Error for UnsupportedBuild {}
 
-/// The ids of the condition buffs of a log (`SkillEvent.ConditionDamageBased`).
-pub(crate) fn condition_ids(ctx: &LogContext<'_>) -> HashSet<i64> {
-    BUFFS
-        .iter()
-        .filter(|d| {
-            ctx.gw2_build < d.max_build
-                && ctx.gw2_build >= d.min_build
-                && ctx.kept.version.build < d.max_evtc_build
-                && ctx.kept.version.build >= d.min_evtc_build
-        })
-        .filter(|d| d.classification == Classification::Condition)
-        .map(|d| d.id)
-        .collect()
+/// The ids of the buffs of a classification that exist in the builds of a log (cached: the buff
+/// table has thousands of entries and is asked for once per player and target).
+pub(crate) fn classified_ids(
+    ctx: &LogContext<'_>,
+    classification: Classification,
+) -> Rc<HashSet<i64>> {
+    type Key = (u64, i32, Classification);
+    thread_local! {
+        static CACHE: RefCell<HashMap<Key, Rc<HashSet<i64>>>> = RefCell::new(HashMap::new());
+    }
+    let key = (ctx.gw2_build, ctx.kept.version.build, classification);
+    CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .entry(key)
+            .or_insert_with(|| {
+                Rc::new(
+                    BUFFS
+                        .iter()
+                        .filter(|d| {
+                            ctx.gw2_build < d.max_build
+                                && ctx.gw2_build >= d.min_build
+                                && ctx.kept.version.build < d.max_evtc_build
+                                && ctx.kept.version.build >= d.min_evtc_build
+                        })
+                        .filter(|d| d.classification == classification)
+                        .map(|d| d.id)
+                        .collect(),
+                )
+            })
+            .clone()
+    })
 }
 
+/// The ids of the condition buffs of a log (`SkillEvent.ConditionDamageBased`).
+pub(crate) fn condition_ids(ctx: &LogContext<'_>) -> Rc<HashSet<i64>> {
+    classified_ids(ctx, Classification::Condition)
+}
 /// Damage of the agent at `address` to everything that is not friendly, between the start of the
 /// log and `ctx.log_end` (times with `ctx.time_offset` applied).
 ///
@@ -114,6 +139,7 @@ pub(crate) fn condition_ids(ctx: &LogContext<'_>) -> HashSet<i64> {
 #[allow(clippy::implicit_hasher)]
 pub fn actor_damage(
     ctx: &LogContext<'_>,
+    events: &[&evtc_ingest::CombatRecord],
     address: u64,
     barrier_negated: &HashSet<u64>,
     only_to: Option<&HashSet<u64>>,
@@ -125,7 +151,7 @@ pub fn actor_damage(
     let conditions = condition_ids(ctx);
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
     let mut totals = DamageTotals::default();
-    for e in &kept.events {
+    for e in events.iter().copied() {
         if e.state_change != crate::generated::state_change::COMBAT {
             continue;
         }

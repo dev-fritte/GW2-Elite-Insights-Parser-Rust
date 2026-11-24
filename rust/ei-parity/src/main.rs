@@ -126,6 +126,8 @@ struct FieldStats {
 fn bench(opts: &Options, api: &Api, manifest: &[Entry]) {
     use std::time::Instant;
     let mut times: Vec<f64> = Vec::new();
+    // seconds in: metadata, buffs, damage and statistics, encounter timing
+    let mut parts = [0.0f64; 4];
     for entry in manifest {
         let path = opts.corpus.join(&entry.folder).join(&entry.file);
         let Ok(data) = read_log(&path) else {
@@ -133,11 +135,22 @@ fn bench(opts: &Options, api: &Api, manifest: &[Entry]) {
         };
         let start = Instant::now();
         let _ = analyze(&data, api);
+        parts[0] += start.elapsed().as_secs_f64();
+        let t = Instant::now();
         let _ = ei_core::pipeline::analyze_buffs(&data, api, None);
+        parts[1] += t.elapsed().as_secs_f64();
+        let t = Instant::now();
         let _ = ei_core::pipeline::analyze_damage(&data, api, None);
+        parts[2] += t.elapsed().as_secs_f64();
+        let t = Instant::now();
         let _ = ei_core::pipeline::analyze_offset(&data);
+        parts[3] += t.elapsed().as_secs_f64();
         times.push(start.elapsed().as_secs_f64() * 1000.0);
     }
+    println!(
+        "bench parts: metadata {:.1} s, buffs {:.1} s, damage and statistics {:.1} s, encounter {:.1} s",
+        parts[0], parts[1], parts[2], parts[3]
+    );
     times.sort_by(f64::total_cmp);
     let sum: f64 = times.iter().sum();
     let at = |percent: usize| times[(times.len() - 1) * percent / 100];

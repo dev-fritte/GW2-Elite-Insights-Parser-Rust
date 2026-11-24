@@ -42,6 +42,7 @@ pub enum Direction {
 #[allow(clippy::implicit_hasher)]
 pub fn hits(
     ctx: &LogContext<'_>,
+    events: &[&evtc_ingest::CombatRecord],
     address: u64,
     direction: Direction,
     kind: DamageKind,
@@ -60,7 +61,7 @@ pub fn hits(
         .find(|e| e.src_agent != 0 && redirect(e.src_agent) == address && e.src_instid != 0)
         .map_or(0, |e| e.src_instid);
     let mut out = Vec::new();
-    for e in &kept.events {
+    for e in events.iter().copied() {
         if e.state_change != sc::COMBAT {
             continue;
         }
