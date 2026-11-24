@@ -11,6 +11,8 @@ pub struct OffsetStats {
     pub logs: usize,
     pub offset_ok: usize,
     pub duration_ok: usize,
+    pub targets_ok: usize,
+    pub target_examples: Vec<String>,
     pub examples: Vec<String>,
 }
 
@@ -41,6 +43,26 @@ pub fn compare_log(
     let duration_ok = offset.zip(ours.fight_end).map(|(o, end)| end - o) == expected_duration;
     if duration_ok {
         s.duration_ok += 1;
+    }
+    // the target list: species ids of the real targets, in order (negative ids are volatile species)
+    let expected_targets: Vec<i64> = reference
+        .get("targets")
+        .and_then(Value::as_array)
+        .map(|t| {
+            t.iter()
+                .filter(|x| x.get("isFake").and_then(Value::as_bool) != Some(true))
+                .filter_map(|x| x.get("id").and_then(Value::as_i64))
+                .filter(|id| *id > 0)
+                .collect()
+        })
+        .unwrap_or_default();
+    let our_targets: Vec<i64> = ours.targets.iter().map(|t| i64::from(t.species)).collect();
+    if our_targets == expected_targets {
+        s.targets_ok += 1;
+    } else if s.target_examples.len() < 3 {
+        s.target_examples.push(format!(
+            "{label}: rust {our_targets:?} reference {expected_targets:?}"
+        ));
     }
     if (!offset_ok || !duration_ok) && s.examples.len() < 3 {
         s.examples.push(format!(

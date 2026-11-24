@@ -291,7 +291,7 @@ pub fn analyze_damage(
 }
 
 /// The encounter offset the core determines for a log and the end of the log.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct OffsetAnalysis {
     /// `GetLogOffset` of the encounter, or `None` if the main target is not in the log.
     pub offset: Option<i64>,
@@ -301,6 +301,8 @@ pub struct OffsetAnalysis {
     pub fight_end: Option<i64>,
     /// Trigger id of the log.
     pub trigger_id: u16,
+    /// Targets of the encounter with the offset applied (only species with a positive id).
+    pub targets: Vec<crate::encounter::Target>,
 }
 
 /// Determines the encounter offset of a log.
@@ -331,6 +333,7 @@ pub fn analyze_offset(data: &[u8]) -> Result<OffsetAnalysis, AnalysisError> {
             .ok(),
         log_end: kept.log_end_time,
         trigger_id: kept.trigger_id,
+        targets: crate::encounter::log_targets(&kept, evtc.agents(), offset.unwrap_or(0)),
     })
 }
 

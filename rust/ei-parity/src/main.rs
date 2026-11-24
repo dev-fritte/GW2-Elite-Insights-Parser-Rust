@@ -249,6 +249,16 @@ fn run() -> Result<bool, Box<dyn Error>> {
                 }
             }
         }
+        let targets: usize = offset_stats.values().map(|s| s.targets_ok).sum();
+        println!("target lists: {targets}/{logs} identical");
+        for (folder, s) in &offset_stats {
+            if s.targets_ok != s.logs {
+                println!("  {folder}: targets {}/{}", s.targets_ok, s.logs);
+                for e in &s.target_examples {
+                    println!("      {e}");
+                }
+            }
+        }
         if offsets != logs || durations != logs {
             all_match = false;
         }

@@ -1539,6 +1539,181 @@ pub fn log_end(
     })
 }
 
+/// Files a regrouped group of agents: a single agent keeps its place, a merged one is new.
+fn flush(
+    group: Option<(usize, Target, usize)>,
+    singles: &mut Vec<(usize, Target)>,
+    merged: &mut Vec<Target>,
+) {
+    match group {
+        Some((index, target, 1)) => singles.push((index, target)),
+        Some((_, target, _)) => merged.push(target),
+        None => {}
+    }
+}
+
+/// A target of the encounter (`LogLogic.Targets`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Target {
+    /// Address of the agent.
+    pub address: u64,
+    /// Species id.
+    pub species: i32,
+    /// First time of the agent, with the offset applied.
+    pub first: i64,
+    /// Last time of the agent, with the offset applied.
+    pub last: i64,
+}
+
+/// The targets of the encounter: the agents of the species its logic lists, ordered by first
+/// appearance and then by the sort keys of the logic (`LogLogic.ComputeLogTargets`).
+///
+/// Only agents with a known species are found; the volatile species that C# derives for gadgets
+/// (negative ids) are not.
+#[must_use]
+#[allow(clippy::too_many_lines)]
+pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Target> {
+    let Some(logic) = ei_data::targets::logic(i32::from(kept.trigger_id)) else {
+        return Vec::new();
+    };
+    let spans = spans(kept);
+    // the instance id of every agent: the first one its records carry (`UpdateAgentData`)
+    let mut instids: HashMap<u64, u16> = HashMap::new();
+    // and the master it reports
+    let mut masters: HashMap<u64, u16> = HashMap::new();
+    for e in &kept.events {
+        if src_is_agent(e.state_change) && e.src_agent != 0 && e.src_master_instid != 0 {
+            masters
+                .entry(
+                    *kept
+                        .agent_redirection
+                        .get(&e.src_agent)
+                        .unwrap_or(&e.src_agent),
+                )
+                .or_insert(e.src_master_instid);
+        }
+        if src_is_agent(e.state_change) && e.src_agent != 0 && e.src_instid != 0 {
+            instids
+                .entry(
+                    *kept
+                        .agent_redirection
+                        .get(&e.src_agent)
+                        .unwrap_or(&e.src_agent),
+                )
+                .or_insert(e.src_instid);
+        }
+        if dst_is_agent(e.state_change) && e.dst_agent != 0 && e.dst_instid != 0 {
+            instids
+                .entry(
+                    *kept
+                        .agent_redirection
+                        .get(&e.dst_agent)
+                        .unwrap_or(&e.dst_agent),
+                )
+                .or_insert(e.dst_instid);
+        }
+    }
+    // squad combat windows: agents of different windows are never regrouped
+    let mut windows = vec![i64::MIN];
+    windows.extend(
+        kept.events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.state_change,
+                    sc::SQUAD_COMBAT_START | sc::SQUAD_COMBAT_END
+                )
+            })
+            .map(|e| e.time),
+    );
+    let window = |t: &Target| {
+        let half = i64::midpoint(t.first, t.last) + offset;
+        windows
+            .iter()
+            .rfind(|&&w| w <= half)
+            .copied()
+            .unwrap_or(i64::MIN)
+    };
+    // agents in the order of the agent table, like C# lists them before it sorts
+    let mut candidates: Vec<(Target, u16, String, u16)> = Vec::new();
+    for agent in table.iter() {
+        let species = match agent_kind(agent) {
+            AgentKind::Npc => i64::from(agent.profession()),
+            AgentKind::Gadget => i64::from(agent.profession() & 0xFFFF),
+            _ => continue,
+        };
+        let Ok(species) = i32::try_from(species) else {
+            continue;
+        };
+        let Some(&(first, last)) = spans.get(&agent.address()) else {
+            continue;
+        };
+        if logic.targets.contains(&species) {
+            candidates.push((
+                Target {
+                    address: agent.address(),
+                    species,
+                    first: first - offset,
+                    last: last - offset,
+                },
+                instids.get(&agent.address()).copied().unwrap_or(0),
+                agent.name().into_owned(),
+                masters.get(&agent.address()).copied().unwrap_or(0),
+            ));
+        }
+    }
+    // `RegroupSameAgentsAndDetermineTeams`: consecutive agents of one instance id, species and
+    // name in the same combat window are one agent
+    // (position in the agent table, target); regrouped agents are new and come last
+    let mut singles: Vec<(usize, Target)> = Vec::new();
+    let mut merged: Vec<Target> = Vec::new();
+    let mut order: Vec<u16> = Vec::new();
+    for (_, instid, _, _) in &candidates {
+        if !order.contains(instid) {
+            order.push(*instid);
+        }
+    }
+    for instid in order {
+        let mut previous: Option<&(Target, u16, String, u16)> = None;
+        let mut group: Option<(usize, Target, usize)> = None;
+        let mut group_window = i64::MIN;
+        for (index, cand) in candidates.iter().enumerate().filter(|(_, c)| c.1 == instid) {
+            let same = previous.is_some_and(|p| {
+                p.0.species == cand.0.species
+                    && p.2 == cand.2
+                    && p.3 == cand.3
+                    && group_window == window(&cand.0)
+            });
+            if let (Some((_, g, count)), true) = (&mut group, same) {
+                g.first = g.first.min(cand.0.first);
+                g.last = g.last.max(cand.0.last);
+                *count += 1;
+            } else {
+                flush(group.take(), &mut singles, &mut merged);
+                group = Some((index, cand.0, 1));
+                group_window = window(&cand.0);
+            }
+            previous = Some(cand);
+        }
+        flush(group, &mut singles, &mut merged);
+    }
+    singles.sort_by_key(|(index, _)| *index);
+    let mut targets: Vec<Target> = singles.into_iter().map(|(_, t)| t).collect();
+    targets.extend(merged);
+    targets.retain(|t| t.last > 0);
+    targets.sort_by_key(|t| t.first);
+    // stable, like `OrderBy`; the default key is the position in the list
+    let key = |t: &Target| {
+        logic
+            .sort
+            .iter()
+            .find(|(id, _)| *id == t.species)
+            .map_or(i32::MAX, |&(_, k)| k)
+    };
+    targets.sort_by_key(key);
+    targets
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
