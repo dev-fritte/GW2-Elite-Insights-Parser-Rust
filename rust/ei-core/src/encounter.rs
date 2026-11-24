@@ -366,6 +366,336 @@ fn dhuum_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
     Ok(first.unwrap_or(0))
 }
 
+/// `GetLogOffsetForTarget`: the start of the target, but not before the log start.
+fn offset_for_target(target: &Agent) -> i64 {
+    target.first.max(0)
+}
+
+/// `GetLogOffsetBySpawn`.
+fn offset_by_spawn(c: &Ctx<'_>, target: &Agent) -> i64 {
+    let start = offset_for_target(target);
+    c.first_with(|e| {
+        e.state_change == sc::SPAWN && c.src(e, target) && e.time <= start + TIME_THRESHOLD
+    })
+    .map_or(start, |spawn| start.max(spawn.time))
+}
+
+/// `GetEnterCombatForStart`: the first combat entry of the target from `start` on, if it is not
+/// followed by an earlier exit.
+fn enter_combat_for_start(c: &Ctx<'_>, target: &Agent, start: i64) -> Option<i64> {
+    let enter = c.first_with(|e| {
+        e.state_change == sc::ENTER_COMBAT && c.src(e, target) && e.time >= start
+    })?;
+    let exit =
+        c.first_with(|e| e.state_change == sc::EXIT_COMBAT && c.src(e, target) && e.time >= start);
+    exit.is_none_or(|x| x.time > enter.time)
+        .then_some(enter.time)
+}
+
+/// `GetLogOffsetByInvulnStart`: the end of the invulnerability a target spawns with.
+fn offset_by_invuln_start(c: &Ctx<'_>, target: &Agent, invuln: i64) -> i64 {
+    let start = offset_for_target(target);
+    let Some(remove) = c.first_with(|e| {
+        i64::from(e.skill_id) == invuln
+            && e.state_change == sc::BUFF_REMOVE_ALL
+            && c.src(e, target)
+            && e.time >= start
+    }) else {
+        return start;
+    };
+    let apply = c.first_with(|e| {
+        i64::from(e.skill_id) == invuln
+            && c.dst(e, target)
+            && matches!(
+                e.state_change,
+                sc::BUFF_APPLY | sc::BUFF_CHANGE | sc::BUFF_INITIAL
+            )
+            && e.time >= start
+    });
+    match apply {
+        Some(apply) if apply.time <= remove.time => {
+            // applied at the start rather than already present
+            if apply.state_change != sc::BUFF_INITIAL && apply.time <= target.first + TIME_THRESHOLD
+            {
+                return remove.time;
+            }
+            if enter_combat_for_start(c, target, start)
+                .is_some_and(|enter| enter + SERVER_DELAY >= apply.time)
+            {
+                return remove.time;
+            }
+        }
+        _ => {
+            if enter_combat_for_start(c, target, start).is_some_and(|enter| enter >= remove.time) {
+                return remove.time;
+            }
+        }
+    }
+    start
+}
+
+/// The generic rule with the context of the encounter rules.
+fn generic(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    generic_log_offset(c.kept, c.table, c.spans, u32::from(c.kept.trigger_id))
+}
+
+/// The enter combat time of the species in `ids` after the log start update, 0 without update.
+fn enter_combat_after_update(c: &Ctx<'_>, ids: &[u32]) -> Result<i64, MissingKeyActors> {
+    match c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE) {
+        Some(update) => {
+            enter_combat_time(c.kept, c.table, c.spans, update.time, ids, update.dst_agent)
+        }
+        None => Ok(0),
+    }
+}
+
+/// `River.GetLogOffset`: the first enervator.
+fn river_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    if c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE)
+        .is_none()
+    {
+        return Ok(0);
+    }
+    species_agents(c.table, c.spans, 19863)
+        .first()
+        .map(|a| a.first)
+        .ok_or(MissingKeyActors)
+}
+
+/// `Ensolyss.GetLogOffset`.
+fn ensolyss_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    let ensolyss = c.agent(species::target_id::ENSOLYSS)?;
+    let start = offset_by_invuln_start(c, &ensolyss, skill::DETERMINED762);
+    let caustic = c.first_with(|e| {
+        i64::from(e.skill_id) == skill::CAUSTIC_EXPLOSION_ENSOLYSS
+            && e.state_change == sc::ANIMATION_START
+            && c.src(e, &ensolyss)
+            && e.time > start
+    });
+    if caustic.is_some_and(|e| e.time <= start + 3000) {
+        return Ok(0);
+    }
+    Ok(start)
+}
+
+/// `MAMA.GetLogOffset`: the generic start, refined by MAMA entering combat.
+fn mama_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    let start = generic(c)?;
+    let Some(mama) = species_agents(c.table, c.spans, 17021).first().copied() else {
+        return Ok(start);
+    };
+    Ok(
+        c.first_with(|e| c.src(e, &mama) && e.state_change == sc::ENTER_COMBAT && e.time >= start)
+            .map_or(start, |e| e.time),
+    )
+}
+
+/// `Siax.GetLogOffset`.
+fn siax_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    let siax = c.agent(species::target_id::SIAX)?;
+    Ok(offset_by_spawn(c, &siax))
+}
+
+/// `Skorvald.GetLogOffset`.
+fn skorvald_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    let Some(update) = c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE) else {
+        return Ok(0);
+    };
+    let skorvald = c.agent(species::target_id::SKORVALD)?;
+    let upper = c
+        .kept
+        .events
+        .iter()
+        .find(|e| {
+            (c.src(e, &skorvald) || c.dst(e, &skorvald))
+                && is_non_zero_damage(e)
+                && e.time >= update.time - SERVER_DELAY
+        })
+        .map_or(update.time, |e| e.time);
+    // percentage above zero: the stored value is hundredths of a percent
+    let health = c.first_with(|e| {
+        e.state_change == sc::HEALTH_UPDATE && c.src(e, &skorvald) && e.dst_agent / 100 > 0
+    });
+    let enter = c.first_with(|e| {
+        e.state_change == sc::ENTER_COMBAT && c.src(e, &skorvald) && e.time <= upper + SERVER_DELAY
+    });
+    Ok(match health {
+        Some(h) => h.time.min(enter.map_or(i64::MAX, |e| e.time)),
+        None => 0,
+    })
+}
+
+/// `Kanaxai.GetLogOffset`.
+fn kanaxai_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    let kanaxai = c.agent(species::target_id::KANAXAI_SCYTHE_OF_HOUSE_AURKUS_CM)?;
+    Ok(offset_by_invuln_start(c, &kanaxai, skill::DETERMINED762))
+}
+
+/// `GreerTheBlightbringer.GetLogOffset`.
+fn greer_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    enter_combat_after_update(c, &[26725, 26771, 26742])
+}
+
+/// `UraTheSteamshrieker.GetLogOffset`.
+fn ura_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    if c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE)
+        .is_none()
+    {
+        return Ok(0);
+    }
+    let start = enter_combat_after_update(c, &[u32::from(c.kept.trigger_id)])?;
+    // the moment two deterrence buffs are active at once
+    let mut active: Vec<(u64, i64)> = Vec::new();
+    for e in &c.kept.events {
+        if i64::from(e.skill_id) != skill::DETERRENCE {
+            continue;
+        }
+        if matches!(
+            e.state_change,
+            sc::BUFF_APPLY | sc::BUFF_CHANGE | sc::BUFF_INITIAL
+        ) {
+            active.retain(|a| a.0 != e.dst_agent);
+            active.push((e.dst_agent, e.time));
+        } else if matches!(e.state_change, sc::BUFF_REMOVE_ALL | sc::BUFF_REMOVE_SINGLE) {
+            active.retain(|a| a.0 != e.src_agent);
+        } else {
+            continue;
+        }
+        if active.len() == 2 {
+            break;
+        }
+    }
+    Ok(if active.len() == 2 {
+        start.min(active.iter().map(|a| a.1).max().unwrap_or(start))
+    } else {
+        start
+    })
+}
+
+/// `GuardiansGlade.GetLogOffset`.
+fn kela_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    if c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE)
+        .is_none()
+    {
+        return Ok(0);
+    }
+    let enter = enter_combat_after_update(c, &[u32::from(c.kept.trigger_id)])?;
+    let fixation = c.first_with(|e| {
+        i64::from(e.skill_id) == skill::FIXATED_KELA
+            && matches!(
+                e.state_change,
+                sc::BUFF_APPLY | sc::BUFF_CHANGE | sc::BUFF_INITIAL
+            )
+    });
+    Ok(match fixation {
+        Some(f) if f.time <= enter => f.time,
+        _ => enter,
+    })
+}
+
+/// `NexusOfEternity.GetLogOffset`.
+fn vloxx_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    let Some(update) = c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE) else {
+        return Ok(0);
+    };
+    let start = enter_combat_after_update(c, &[u32::from(c.kept.trigger_id)])?;
+    let vloxx = species_agents(c.table, c.spans, 28106)
+        .into_iter()
+        .find(|a| a.address == update.dst_agent)
+        .ok_or(MissingKeyActors)?;
+    let targetable =
+        c.first_with(|e| e.state_change == sc::TARGETABLE && c.src(e, &vloxx) && e.dst_agent > 0);
+    Ok(targetable.map_or(start, |t| start.min(t.time)))
+}
+
+/// `GetFirstDamageEventTime`: the first damage event that involves the target.
+fn first_damage_time(c: &Ctx<'_>, target: &Agent) -> i64 {
+    c.first_with(|e| (c.src(e, target) || c.dst(e, target)) && is_non_zero_damage(e))
+        .map_or(target.first, |e| e.time)
+}
+
+/// `StatueOfIce.GetLogOffset`: the first cast of the Broken King.
+fn broken_king_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    let king = c.agent(species::target_id::BROKEN_KING)?;
+    if c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE)
+        .is_none()
+    {
+        return Ok(0);
+    }
+    let cast = c.first_with(|e| {
+        e.state_change == sc::ANIMATION_START
+            && i64::from(e.skill_id) == skill::BROKEN_KING_FIRST_CAST
+            && c.src(e, &king)
+    });
+    Ok(cast.map_or_else(|| first_damage_time(c, &king), |e| e.time))
+}
+
+/// `Qadim.GetLogOffset`: the initial cast, if a flame attack follows it.
+fn qadim_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    c.agent(species::target_id::QADIM)?;
+    let start = c.first_with(|e| {
+        i64::from(e.skill_id) == skill::QADIM_INITIAL_CAST && e.state_change == sc::ANIMATION_START
+    });
+    let check = c.first_with(|e| {
+        matches!(
+            i64::from(e.skill_id),
+            skill::FLAME_SLASH3 | skill::FLAME_SLASH | skill::FLAME_WAVE
+        ) && e.state_change == sc::ANIMATION_START
+    });
+    let (Some(start), Some(check)) = (start, check) else {
+        return Ok(0);
+    };
+    Ok(if check.time - start.time > 0 {
+        start.time
+    } else {
+        0
+    })
+}
+
+/// `OldLionsCourt.GetLogOffset`: the generic start, moved to the moment Vermilion's breakbar
+/// becomes active.
+fn old_lions_court_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    let start = generic(c)?;
+    let vermilion = first_agent(c.table, c.spans, species::target_id::PROTOTYPE_VERMILION_CM)
+        .or_else(|| first_agent(c.table, c.spans, species::target_id::PROTOTYPE_VERMILION));
+    let Some(vermilion) = vermilion else {
+        return Ok(start);
+    };
+    // breakbar state 0 is `Active`
+    let active = c.first_with(|e| {
+        e.state_change == sc::BREAKBAR_STATE && c.src(e, &vermilion) && e.value == 0
+    });
+    Ok(active.map_or(start, |e| e.time))
+}
+
+/// `SpiritRace.GetLogOffset`: the first movement of the wall of ghosts.
+#[allow(clippy::unnecessary_wraps)]
+fn spirit_race_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    let wall = first_agent(c.table, c.spans, species::target_id::WALL_OF_GHOSTS);
+    let Some(wall) = wall else {
+        return Ok(0);
+    };
+    let moving =
+        c.first_with(|e| e.state_change == sc::VELOCITY && c.src(e, &wall) && e.dst_agent != 0);
+    Ok(moving.map_or(0, |e| e.time))
+}
+
+/// `TempleOfFebe.GetLogOffset`: the spawn of Cerus, or his first appearance.
+fn cerus_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    if c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE)
+        .is_none()
+    {
+        return Ok(0);
+    }
+    let enter = enter_combat_after_update(c, &[u32::from(c.kept.trigger_id)])?;
+    let cerus = c.agent(25989)?;
+    let spawn = c.first_with(|e| e.state_change == sc::SPAWN && c.src(e, &cerus));
+    Ok(match spawn {
+        Some(s) if enter >= s.time => s.time,
+        _ => cerus.first,
+    })
+}
+
 /// An encounter specific `GetLogOffset`.
 type Rule = fn(&Ctx<'_>) -> Result<i64, MissingKeyActors>;
 
@@ -380,6 +710,21 @@ fn rule_for(trigger_id: u16) -> Option<Rule> {
         id::ARKK => arkk_offset,
         id::MC_LEOD_THE_SILENT => escort_offset,
         id::DHUUM => dhuum_offset,
+        19828 => river_offset,
+        id::ENSOLYSS => ensolyss_offset,
+        id::MAMA => mama_offset,
+        id::SIAX => siax_offset,
+        id::SKORVALD => skorvald_offset,
+        id::KANAXAI_SCYTHE_OF_HOUSE_AURKUS_CM => kanaxai_offset,
+        id::GREER => greer_offset,
+        26712 => ura_offset,
+        27124 => kela_offset,
+        id::VLOXX => vloxx_offset,
+        id::BROKEN_KING => broken_king_offset,
+        id::QADIM => qadim_offset,
+        id::PROTOTYPE_VERMILION | id::PROTOTYPE_VERMILION_CM => old_lions_court_offset,
+        id::ETHEREAL_BARRIER_GADGET => spirit_race_offset,
+        25989 => cerus_offset,
         _ => return None,
     })
 }
