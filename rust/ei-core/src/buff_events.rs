@@ -17,6 +17,10 @@ use evtc_ingest::CombatRecord;
 use crate::generated::state_change as sc;
 use crate::keep::Kept;
 
+mod custom;
+mod weaver;
+pub use weaver::ElementalistKind;
+
 /// `ArcDPSBuilds.BuffAppliesAndRemovesAsStateChanges`.
 const STATE_CHANGE_BUILD: i32 = 20_260_501;
 /// `ParserHelper.ServerDelayConstant`.
@@ -124,6 +128,8 @@ struct Pending {
     extra: i64,
     /// `false` for a remove event the C# parser does not feed to the simulator.
     compliant: bool,
+    /// Position of the record in the log, to restore the file order across buffs.
+    seq: usize,
 }
 
 /// `CombatData.OffsetBuffExtensionEvents` for one buff on one agent: the new duration of arcdps
@@ -316,7 +322,11 @@ fn fix_removed_durations(list: &mut [Pending], conditional_loss: bool) {
 /// # Errors
 /// [`Error::UnsupportedBuild`] for old logs, [`Error::Simulator`] if a buff cannot be simulated.
 #[allow(clippy::too_many_lines)]
-pub fn simulate_agent(ctx: &LogContext<'_>, address: u64) -> Result<Vec<BuffResult>, Error> {
+pub fn simulate_agent(
+    ctx: &LogContext<'_>,
+    address: u64,
+    kind: ElementalistKind,
+) -> Result<Vec<BuffResult>, Error> {
     let kept = ctx.kept;
     let shifted: Vec<CombatRecord> = kept
         .events
@@ -329,13 +339,29 @@ pub fn simulate_agent(ctx: &LogContext<'_>, address: u64) -> Result<Vec<BuffResu
     if kept.version.build < STATE_CHANGE_BUILD {
         return Err(Error::UnsupportedBuild(kept.version.build));
     }
-    let defs: HashMap<i64, &'static BuffDef> = BUFFS
+    let mut defs: HashMap<i64, &'static BuffDef> = BUFFS
         .iter()
         .filter(|d| available(d, ctx.gw2_build, kept.version.build))
         .fold(HashMap::new(), |mut m, d| {
             m.entry(d.id).or_insert(d);
             m
         });
+    let infos: HashMap<u32, custom::Info> = kept
+        .events
+        .iter()
+        .filter(|e| e.state_change == sc::BUFF_INFO)
+        .map(|e| {
+            (
+                e.skill_id,
+                custom::Info {
+                    category: e.is_offcycle,
+                    max_stacks: e.src_master_instid,
+                },
+            )
+        })
+        .collect();
+    let known: std::collections::HashSet<i64> = defs.keys().copied().collect();
+    defs.extend(custom::unknown_consumables(&known, &infos));
     let max_stacks: HashMap<u32, u16> = kept
         .events
         .iter()
@@ -381,7 +407,7 @@ pub fn simulate_agent(ctx: &LogContext<'_>, address: u64) -> Result<Vec<BuffResu
         address_field == 0 && instid > 0 && instid == agent_instance && known_around(t)
     };
 
-    for e in &shifted {
+    for (seq, e) in shifted.iter().enumerate() {
         let is_src = crate::rules::src_is_agent(e.state_change)
             && ((e.src_agent != 0 && redirect(e.src_agent) == address)
                 || orphan(e.src_agent, e.src_instid, e.time));
@@ -408,13 +434,22 @@ pub fn simulate_agent(ctx: &LogContext<'_>, address: u64) -> Result<Vec<BuffResu
             continue;
         }
         let id = i64::from(e.skill_id);
-        if !defs.contains_key(&id) {
+        let wanted = defs.contains_key(&id)
+            || (kind == ElementalistKind::Weaver && weaver::is_attunement(id));
+        if !wanted {
             continue;
         }
-        if let Converted::Event(p) = convert(e) {
+        if let Converted::Event(mut p) = convert(e) {
+            p.seq = seq;
             per_buff.entry(id).or_default().push(p);
         }
     }
+    match kind {
+        ElementalistKind::Weaver => weaver::transform(&mut per_buff, src_id(address)),
+        ElementalistKind::Other => weaver::remove_duals(&mut per_buff),
+        ElementalistKind::None => {}
+    }
+    per_buff.retain(|id, _| defs.contains_key(id));
 
     // `BuffDictionary.Finalize`: clear the buffs around spawn, despawn and the last time seen
     let clear = |time: i64| Pending {
@@ -427,6 +462,7 @@ pub fn simulate_agent(ctx: &LogContext<'_>, address: u64) -> Result<Vec<BuffResu
         original_duration: 0,
         extra: 0,
         compliant: true,
+        seq: 0,
     };
     let mut results = Vec::with_capacity(per_buff.len());
     let mut ids: Vec<i64> = per_buff.keys().copied().collect();
@@ -543,9 +579,11 @@ fn pending(sim: SimEvent, instance: u32) -> Pending {
         original_duration: 0,
         extra: 0,
         compliant: true,
+        seq: 0,
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn convert(e: &CombatRecord) -> Converted {
     let time = e.time;
     match e.state_change {
@@ -635,7 +673,18 @@ fn convert(e: &CombatRecord) -> Converted {
                     )
                 })
             }
-            _ => Converted::Ignored, // BuffRemove.Manual and unknown values
+            // `BuffRemove.Manual`: never simulated, but part of the event lists
+            3 => Converted::Event(Pending {
+                compliant: false,
+                ..pending(
+                    SimEvent::RemoveSingle {
+                        time,
+                        removed_duration: i64::from(e.value),
+                    },
+                    e.pad,
+                )
+            }),
+            _ => Converted::Ignored,
         },
         _ => Converted::Ignored,
     }

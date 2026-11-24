@@ -138,6 +138,15 @@ pub struct BuffAnalysis {
     pub players: Vec<PlayerBuffs>,
 }
 
+fn elementalist_kind(player: &Player) -> crate::buff_events::ElementalistKind {
+    use crate::buff_events::ElementalistKind;
+    match player.profession.as_str() {
+        "Weaver" => ElementalistKind::Weaver,
+        "Elementalist" | "Tempest" | "Catalyst" | "Evoker" => ElementalistKind::Other,
+        _ => ElementalistKind::None,
+    }
+}
+
 /// Simulates the buffs of all squad players of a log.
 ///
 /// # Errors
@@ -167,8 +176,9 @@ pub fn analyze_buffs(
     };
     let mut out = Vec::with_capacity(players.len());
     for player in players {
-        let buffs = crate::buff_events::simulate_agent(&ctx, player.address)
-            .map_err(AnalysisError::Buff)?;
+        let buffs =
+            crate::buff_events::simulate_agent(&ctx, player.address, elementalist_kind(&player))
+                .map_err(AnalysisError::Buff)?;
         out.push(PlayerBuffs { player, buffs });
     }
     Ok(BuffAnalysis {
