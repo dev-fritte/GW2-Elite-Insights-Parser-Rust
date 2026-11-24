@@ -32,7 +32,7 @@ Aufruf: `ei-parity --corpus <Wurzel> --manifest docs/phase0/corpus-manifest.tsv 
 
 ## Bekannte Abweichungen (699 Graphen)
 
-- **Mehrere Agenten je Adresse (ca. 320 Graphen, Buffs 740, 717, 725, 719 ...):** Ein Spieler, dessen Agent im Log zerfaellt oder neu beginnt (C# fuehrt einen `AgentItem` je Instanz-ID), hat in C# eine frueher endende Anwesenheit (z. B. Arkk, Orphay: C# loescht alle Buffs bei 60.396 ms, der Core erst bei 79.354 ms). Der Agenten-Aufbau aus Phase 3 ist nicht portiert.
+- **Vermutlich mehrere Agenten je Adresse (Buffs 740, 717, 725, 719 ...; Ursache nicht verifiziert, Anzahl nicht gemessen):** Ein Spieler, dessen Agent im Log zerfaellt oder neu beginnt (C# fuehrt einen `AgentItem` je Instanz-ID), hat in C# eine frueher endende Anwesenheit (z. B. Arkk, Orphay: C# loescht alle Buffs bei 60.396 ms, der Core erst bei 79.354 ms). Der Agenten-Aufbau aus Phase 3 ist nicht portiert.
 - **Intensity-Buffs mit Stack-Aenderungen im selben Millisekunden-Fenster (z. B. 1122, 70767, 72975, 69795):** der Verlauf weicht ab dem ersten Abbau von Stacks ab. Ursache nicht untersucht.
 - **Einzelfaelle (738, 19426, 76128 ...):** Stackzahl um einen Stack versetzt; vermutet Quellen-/Instanz-Sonderfaelle, nicht untersucht.
 - **Abgeleitete Graphen** (negative IDs: Anzahl Boons, Conditions, aktive Minions) sind nicht simuliert und aus dem Vergleich ausgenommen.
