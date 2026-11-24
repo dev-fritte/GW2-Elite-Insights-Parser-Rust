@@ -14,7 +14,7 @@ Stand 2026-11-24, Branch `phase1-ingest`. Code: `rust/ei-core/src/encounter.rs`,
 
 - **Generischer Kampfbeginn:** `LogLogic.GetLogOffset` mit `GetEnterCombatTime`, `GetPostLogStartNPCUpdateDamageEventTime`. Instanz-Logs: 0. Sonst die Zeit, zu der das Hauptziel nach dem `LogNPCUpdate`-Datensatz in den Kampf ging.
 - **Encounter-spezifische Überschreibungen von `GetLogOffset`** (22 Encounter): Cairn (Rückfall über das Ende des ersten Zaubers fehlt), Xera, Sabir, Arkk, Escort (McLeod), Dhuum, River, Ensolyss, MAMA, Siax, Skorvald, Kanaxai, Greer, Ura, Kela, Vloxx, Statue des Eises, Qadim, Old Lions Court, SpiritRace (nur die Zeit, nicht die Trigger-ID-Überschreibung), Cerus. Gemeinsame Bausteine: `GetLogOffsetBySpawn`, `GetLogOffsetByInvulnStart`, `GetEnterCombatForStart`, `GetFirstDamageEventTime`.
-- **Kampfende, Tod-Fall:** Zeit des letzten Schadens der Spieler am Hauptziel, höchstens der Tod, plus 10 ms, höchstens das Log-Ende (`SetSuccessByDeath`); sonst die letzte Zeit des Ziels (Fehlschlag).
+- **Kampfende:** Der Erfolg über das Truhen-Gadget des Raid-Encounters (`FindChestGadgets`: Gadget mit Hitbox 100 an der Truhenposition, ohne Bewegung; Zeit = erstes Auftreten) hat Vorrang, dann der Tod des Hauptziels (Zeit des letzten Spielerschadens, höchstens der Tod), sonst ein Fehlschlag zur letzten Zeit des Ziels. Ein Erfolg endet 10 ms nach der Zeit, höchstens am Log-Ende. Eigene Regeln: Ankka (dritte lange Unverwundbarkeit), Minister Li (Wiederbelebung), Kanaxai (Unverwundbarkeit am Ende).
 
 ## Messung (103 Korpus-Logs, 26 Encounter)
 
@@ -23,16 +23,16 @@ Vergleich mit `logStartOffset` und `durationMS` des C#-Referenz-JSON:
 | Größe | identisch |
 | --- | ---: |
 | Kampfbeginn | 94 von 103 (nur generisch: 63) |
-| Dauer | 38 von 103 |
+| Dauer | 72 von 103 (nur Tod-Fall: 27; mit Truhen-Erfolg: 68) |
 
 Aufruf: `ei-parity ... --offsets`; er listet je Encounter die Logs mit Abweichung und Beispiele.
 
-Bei Cairn liegt der Tod des Ziels bei 79.713 ms, der Core addiert 10 ms, C# kommt auf 79.711; woher die 2 ms kommen, habe ich nicht gefunden. Die Dauer weicht oft nur um 2 bis 20 ms ab (z. B. Cairn 79.711 statt 79.709, Faultierion 201.159 statt 201.158). Ursache nicht untersucht; verdächtig ist die Auswahl der "Spieler-Schaden" (Schaden von Begleitern über `IsMasterOrSelf`, hier nur über die Instanz-ID des Herrn angenähert) und die Aufteilung der Agenten.
+Die Abweichung von 1 bis 2 ms (7 Logs, z. B. Cerus, Qadim, Matthias, Desmina) ist ungeklärt; bei Cairn war der frühere Befund "2 ms" die Truhe (jetzt behoben). Größere Abweichungen haben eigene `CheckSuccess`-Regeln: Old Lions Court (3 Logs), Aetherblade (Mai Trin), Eparch, Auge des Schicksals, Stimme der Gefallenen, die Golems, Gramvolle und Twisted Castle.
 
 ## Nicht portiert (Ursachen der Abweichungen)
 
 - **Kampfbeginn, 9 Logs in 5 Encounter:** BanditTrio (Berg; braucht Positionsdatensätze und die Trash-Mob-Liste), Deimos (Gefangener, Grün-Auswahl), ConjuredAmalgamate (Beschworene Verschmelzung; Effekt-GUID `CAArmSmash`, flüchtige Spezies), HarvestTemple (Drachenleere; Effekte) und Seelenverzehrer (keine eigene Regel, der generische Beginn liegt 1.000 ms daneben; Ursache nicht gefunden).
-- **Kampfende:** Erfolg über Truhen-Gadget (`ChestID` je Encounter), Kampfausstieg (`CombatExit`), und die `CheckSuccess`-Überschreibungen der Encounter.
+- **Kampfende:** Kampfausstieg (`CombatExit`, nur Xera und Qadim als Rückfall) und die `CheckSuccess`-Überschreibungen der übrigen Encounter (rund 50 Dateien).
 - **Phasen, Zielliste, Schaden je Ziel und Phase, freundliche NPCs, Modus (CM), Mechaniken, Erfolgsbedingungen.**
 
 ## Nächste Schritte
