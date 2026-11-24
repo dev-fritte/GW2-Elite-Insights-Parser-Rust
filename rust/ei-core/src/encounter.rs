@@ -3,7 +3,7 @@
 //! Port of the generic rule of `LogLogic.GetLogOffset` and its helpers in `LogLogicTimeUtils`.
 //! Encounters with their own rule are listed in [`log_offset`].
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use evtc_ingest::AgentTable;
 
@@ -904,6 +904,23 @@ pub fn log_offset(kept: &Kept, table: AgentTable<'_>) -> Result<i64, MissingKeyA
         Some(rule) => rule(&c),
         None => generic_log_offset(kept, table, &spans, u32::from(kept.trigger_id)),
     }
+}
+
+/// The addresses of the main target of the encounter: the first agent of the species of the
+/// trigger id, with the agents that C# merges into it (the second Xera).
+#[must_use]
+pub fn main_target(kept: &Kept, table: AgentTable<'_>) -> Option<HashSet<u64>> {
+    let spans = spans(kept);
+    let first = species_agents(table, &spans, u32::from(kept.trigger_id))
+        .first()
+        .map(|a| a.address)?;
+    let mut set = HashSet::from([first]);
+    if i32::from(kept.trigger_id) == species::target_id::XERA
+        && let Some(second) = species_agents(table, &spans, 16_286).first()
+    {
+        set.insert(second.address);
+    }
+    Some(set)
 }
 
 /// The reward chest of an encounter, by the trigger id of the log (`LogLogic.ChestID`), as the

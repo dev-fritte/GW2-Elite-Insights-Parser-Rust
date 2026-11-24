@@ -30,9 +30,11 @@ Vergleich gegen `players[].dpsAll[0]` des C#-Referenz-JSON (nur der Spieler selb
 
 Ohne die Barriere-Regel wichen 40 Spieler in vier Logs (Nikare, Kardinal Sabir) um 15 bis 25 % ab; mit ihr stimmt alles exakt. Aufruf: `ei-parity ... --damage [--verbose]`, mit `PARITY_PLAYERS=1` die abweichenden Spieler.
 
+**Schaden zum Hauptziel (`dpsTargets[Hauptziel][0]`):** der erste Agent der Spezies der Trigger-ID (bei Xera mit der zweiten Xera, die C# einmischt). Verglichen wird in Logs, deren Referenz genau ein Ziel dieser Spezies hat: 865 Spieler, 23 Abweichungen (Gesamt-, Power-, Zustandsschaden und DPS), alle in Deimos (Zusammenschluss mit dem Körper-Gadget, 18) und Seelenverzehrer (Kampfbeginn 1 ms statt 1.001 ms, 5).
+
 ## Nicht portiert
 
-- Schaden der Minions und Begleiter (`damage`, `powerDamage` ohne `actor`), Schaden je Ziel (`dpsTargets`): braucht die Zielliste der Encounter-Logik.
+- Schaden der Minions und Begleiter (`damage`, `powerDamage` ohne `actor`) und Schaden je Ziel für alle Ziele außer dem Hauptziel (`dpsTargets`): braucht die Zielliste der Encounter-Logik.
 - Schaden pro Phase und die Phasen selbst (6.1).
 - Weitere Encounter-Eingriffe in Schadensereignisse (z. B. `Samarog.MakeIntoAbsorbed`) und zusätzlich vom Parser erzeugte Schadensereignisse.
 - Logs vor arcdps-Build 20260501 (die alte Ergebnislogik).

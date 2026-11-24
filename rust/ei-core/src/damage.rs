@@ -107,6 +107,8 @@ fn condition_ids(ctx: &LogContext<'_>) -> HashSet<i64> {
 /// `barrier_negated` holds the addresses of targets whose barrier damage does not count as health
 /// damage (`LogLogicUtils.NegateDamageAgainstBarrier`, used by some encounters).
 ///
+/// With `only_to`, just the damage to that target counts.
+///
 /// # Errors
 /// [`UnsupportedBuild`] for logs older than the result enum rework.
 #[allow(clippy::implicit_hasher)]
@@ -114,6 +116,7 @@ pub fn actor_damage(
     ctx: &LogContext<'_>,
     address: u64,
     barrier_negated: &HashSet<u64>,
+    only_to: Option<&HashSet<u64>>,
 ) -> Result<DamageTotals, UnsupportedBuild> {
     let kept = ctx.kept;
     if kept.version.build < RESULT_ENUM_REWORK_BUILD {
@@ -132,6 +135,9 @@ pub fn actor_damage(
         }
         // `ToFriendly`: iff 0 is friend
         if e.iff == 0 || e.src_agent == 0 || redirect(e.src_agent) != address {
+            continue;
+        }
+        if only_to.is_some_and(|t| !t.contains(&redirect(e.dst_agent))) {
             continue;
         }
         if e.result == BREAKBAR_DAMAGE {

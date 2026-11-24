@@ -221,6 +221,8 @@ pub struct PlayerDamage {
     pub player: Player,
     /// Damage to foes over the whole log.
     pub totals: crate::damage::DamageTotals,
+    /// Damage to the main target of the encounter, if the log has one.
+    pub to_main_target: Option<crate::damage::DamageTotals>,
 }
 
 /// The damage of all squad players and the length of the fight.
@@ -266,11 +268,21 @@ pub fn analyze_damage(
         .filter(|a| a.is_elite() == 0xFFFF_FFFF && species.contains(&a.profession()))
         .map(|a| a.address())
         .collect();
+    let main_target = crate::encounter::main_target(&kept, evtc.agents());
     let mut out = Vec::with_capacity(players.len());
     for player in players {
-        let totals = crate::damage::actor_damage(&ctx, player.address, &negated)
+        let totals = crate::damage::actor_damage(&ctx, player.address, &negated, None)
             .map_err(|e| AnalysisError::Damage(e.to_string()))?;
-        out.push(PlayerDamage { player, totals });
+        let to_main_target = main_target
+            .as_ref()
+            .map(|t| crate::damage::actor_damage(&ctx, player.address, &negated, Some(t)))
+            .transpose()
+            .map_err(|e| AnalysisError::Damage(e.to_string()))?;
+        out.push(PlayerDamage {
+            player,
+            totals,
+            to_main_target,
+        });
     }
     Ok(DamageAnalysis {
         duration: timing.duration,

@@ -63,7 +63,7 @@ pub fn compare_log(
             s.compared += 1;
             if (t.breakbar() - expected).abs() > 1e-9 {
                 s.mismatches += 1;
-                if s.examples.len() < 8 {
+                if s.examples.len() < 80 {
                     s.examples.push(format!(
                         "{label} {}: rust {} reference {expected}",
                         ours.player.character,
@@ -104,7 +104,7 @@ pub fn compare_log(
                     );
                 }
                 s.mismatches += 1;
-                if s.examples.len() < 8 {
+                if s.examples.len() < 80 {
                     s.examples.push(format!(
                         "{label} {}: rust {value} reference {expected} (diff {})",
                         ours.player.character,
@@ -113,6 +113,68 @@ pub fn compare_log(
                 }
             }
         }
+        compare_main_target(ours, theirs, reference, duration, label, stats);
     }
     Ok(())
+}
+
+/// Compares the damage to the main target with `dpsTargets[target][0]`. Skipped if the reference
+/// has no single target of the species of the trigger id.
+fn compare_main_target(
+    ours: &ei_core::pipeline::PlayerDamage,
+    theirs: &Value,
+    reference: &Value,
+    duration: i64,
+    label: &str,
+    stats: &mut BTreeMap<&'static str, DamageStats>,
+) {
+    use ei_core::damage::DamageTotals;
+    let Some(t) = ours.to_main_target else {
+        return;
+    };
+    let trigger = reference.get("triggerID").and_then(Value::as_i64);
+    let targets = reference
+        .get("targets")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut own = targets
+        .iter()
+        .enumerate()
+        .filter(|(_, x)| x.get("id").and_then(Value::as_i64) == trigger);
+    let (Some((index, _)), None) = (own.next(), own.next()) else {
+        return;
+    };
+    let Some(dps) = theirs
+        .get("dpsTargets")
+        .and_then(|d| d.get(index))
+        .and_then(Value::as_array)
+        .and_then(|p| p.first())
+    else {
+        return;
+    };
+    for (field, key, value) in [
+        ("target damage", "actorDamage", t.damage),
+        ("target power", "actorPowerDamage", t.power),
+        ("target condition", "actorCondiDamage", t.condition),
+        (
+            "target dps",
+            "actorDps",
+            DamageTotals::per_second(t.damage, 0, duration),
+        ),
+    ] {
+        let expected = dps.get(key).and_then(Value::as_i64).unwrap_or(0);
+        let s = stats.entry(field).or_default();
+        s.compared += 1;
+        if value != expected {
+            s.mismatches += 1;
+            if s.examples.len() < 80 {
+                s.examples.push(format!(
+                    "{label} {}: rust {value} reference {expected} (diff {})",
+                    ours.player.character,
+                    value - expected
+                ));
+            }
+        }
+    }
 }
