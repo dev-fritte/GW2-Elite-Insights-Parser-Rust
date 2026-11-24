@@ -80,7 +80,12 @@ fn spans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
 fn species_agents(table: AgentTable<'_>, spans: &HashMap<u64, (i64, i64)>, id: u32) -> Vec<Agent> {
     let mut agents: Vec<Agent> = table
         .iter()
-        .filter(|a| agent_kind(*a) == AgentKind::Npc && a.profession() == id)
+        .filter(|a| match agent_kind(*a) {
+            AgentKind::Npc => a.profession() == id,
+            // gadgets carry their species in the low half of the profession
+            AgentKind::Gadget => a.profession() & 0xFFFF == id,
+            _ => false,
+        })
         .filter_map(|a| {
             spans.get(&a.address()).map(|&(first, last)| Agent {
                 address: a.address(),
@@ -773,6 +778,76 @@ fn bandit_trio_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
     Ok(start)
 }
 
+/// The GUID an `ID_TO_GUID` record carries, in the byte order of `effect_guids`.
+fn record_guid(e: &evtc_ingest::CombatRecord) -> [u8; 16] {
+    let mut bytes = [0u8; 16];
+    bytes[..8].copy_from_slice(&e.src_agent.to_le_bytes());
+    bytes[8..].copy_from_slice(&e.dst_agent.to_le_bytes());
+    bytes
+}
+
+/// Whether the record is an effect record.
+fn is_effect(e: &evtc_ingest::CombatRecord) -> bool {
+    matches!(
+        e.state_change,
+        sc::EFFECT_45
+            | sc::EFFECT_51
+            | sc::EFFECT_AGENT_CREATE
+            | sc::EFFECT_AGENT_REMOVE
+            | sc::EFFECT_GROUND_CREATE
+            | sc::EFFECT_GROUND_REMOVE
+            | sc::EFFECT_MISSILE_CREATE
+    )
+}
+
+/// `ConjuredAmalgamate.GetLogOffset`: the first arm smash effect, found through the GUID table of
+/// the log.
+fn conjured_amalgamate_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    let smash = c
+        .first_with(|e| {
+            e.state_change == sc::ID_TO_GUID
+                && record_guid(e) == ei_data::effect_guids::CA_ARM_SMASH
+        })
+        .and_then(|guid| c.first_with(|e| is_effect(e) && e.skill_id == guid.skill_id));
+    let Some(smash) = smash else {
+        return generic(c);
+    };
+    match c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE) {
+        Some(update) => {
+            let ca = c.agent(species::target_id::CONJURED_AMALGAMATE)?;
+            let first_damage = c
+                .first_with(|e| {
+                    (c.src(e, &ca) || c.dst(e, &ca))
+                        && is_non_zero_damage(e)
+                        && e.time >= update.time - SERVER_DELAY
+                })
+                .map_or(update.time, |e| e.time);
+            // we couldn't have hit CA before the initial smash
+            Ok(if smash.time > first_damage {
+                update.time
+            } else {
+                smash.time
+            })
+        }
+        None => Ok(if smash.time > 6000 { 0 } else { smash.time }),
+    }
+}
+
+/// `HarvestTemple.GetLogOffset`: the first void amalgamate.
+#[allow(clippy::unnecessary_wraps)]
+fn harvest_temple_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    if c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE)
+        .is_none()
+    {
+        return Ok(0);
+    }
+    let first = species_agents(c.table, c.spans, 24_375)
+        .into_iter()
+        .map(|a| a.first)
+        .min();
+    Ok(first.unwrap_or(0))
+}
+
 /// An encounter specific `GetLogOffset`.
 type Rule = fn(&Ctx<'_>) -> Result<i64, MissingKeyActors>;
 
@@ -804,6 +879,8 @@ fn rule_for(trigger_id: u16) -> Option<Rule> {
         25989 => cerus_offset,
         id::DEIMOS => deimos_offset,
         id::BERG => bandit_trio_offset,
+        43_974 => conjured_amalgamate_offset,
+        43_488 => harvest_temple_offset,
         _ => return None,
     })
 }
