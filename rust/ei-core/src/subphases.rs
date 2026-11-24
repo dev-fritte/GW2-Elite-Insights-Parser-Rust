@@ -505,6 +505,102 @@ impl Fight<'_> {
         phases
     }
 
+    /// Cerus: phases alternate with the splits of the embodiments, after the last phase the
+    /// enraged smash starts a final phase.
+    fn cerus(&self, main: usize) -> Vec<SubPhase> {
+        const EMBODIMENTS: [i32; 6] = [
+            species::EMBODIMENT_OF_DESPAIR,
+            species::EMBODIMENT_OF_ENVY,
+            species::EMBODIMENT_OF_GLUTTONY,
+            species::EMBODIMENT_OF_MALICE,
+            species::EMBODIMENT_OF_RAGE,
+            species::EMBODIMENT_OF_REGRET,
+        ];
+        // embodiments that gain the invulnerability of the kill
+        let killed: Vec<usize> = self
+            .targets
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| {
+                EMBODIMENTS.contains(&t.species)
+                    && self.kept.events.iter().any(|e| {
+                        i64::from(e.skill_id) == skill::INVULNERABILITY757
+                            && matches!(
+                                e.state_change,
+                                sc::BUFF_APPLY
+                                    | sc::BUFF_INITIAL
+                                    | sc::BUFF_REMOVE_ALL
+                                    | sc::BUFF_REMOVE_SINGLE
+                            )
+                            && (e.dst_agent != 0 && t.addresses.contains(&self.redirect(e.dst_agent))
+                                || e.src_agent != 0
+                                    && t.addresses.contains(&self.redirect(e.src_agent)))
+                    })
+            })
+            .map(|(i, _)| i)
+            .collect();
+        let invuln_phases = self.by_invuln(
+            &[skill::INVULNERABILITY_CERUS],
+            main,
+            true,
+            true,
+            (0, self.duration),
+        );
+        let mut phases = invuln_phases.clone();
+        for (i, phase) in phases.iter_mut().enumerate() {
+            if (i + 1) % 2 == 0 {
+                self.add_targets_of(phase, &EMBODIMENTS);
+                self.fit(phase);
+                for &index in &killed {
+                    let applied = self.kept.events.iter().any(|e| {
+                        matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+                            && i64::from(e.skill_id) == skill::INVULNERABILITY757
+                            && e.dst_agent != 0
+                            && self.targets[index]
+                                .addresses
+                                .contains(&self.redirect(e.dst_agent))
+                            && (phase.start..=phase.end).contains(&(e.time - self.offset))
+                    });
+                    if applied {
+                        self.add_target(phase, index);
+                    }
+                }
+            } else {
+                self.add_target(phase, main);
+            }
+        }
+        let smash = self
+            .animated_casts_of(
+                &self.targets[main],
+                &[skill::ENRAGED_SMASH_NM, skill::ENRAGED_SMASH_CM],
+            )
+            .first()
+            .map(|c| c.0);
+        if let Some(smash) = smash {
+            let mut last = SubPhase {
+                start: smash,
+                end: self.duration,
+                targets: Vec::new(),
+            };
+            self.add_target(&mut last, main);
+            phases.push(last);
+            if let Some(third) = invuln_phases
+                .iter()
+                .rev()
+                .find(|p| (p.start..=p.end).contains(&smash))
+            {
+                let mut before = SubPhase {
+                    start: third.start,
+                    end: smash,
+                    targets: Vec::new(),
+                };
+                self.add_target(&mut before, main);
+                phases.push(before);
+            }
+        }
+        phases
+    }
+
     /// Phases that alternate between the main target and a split into other targets: the odd
     /// phases belong to the main target, the even ones to the split targets.
     fn alternating(
@@ -625,6 +721,7 @@ pub fn encounter_phases(
             }
             phases
         }
+        species::CERUS => fight.cerus(main),
         species::URA => fight.ura(main)?,
         species::DECIMA => fight.decima(main),
         species::MURSAAT_OVERSEER => fight.by_health(main, &[75.0, 50.0, 25.0, 0.0], (0, duration)),
