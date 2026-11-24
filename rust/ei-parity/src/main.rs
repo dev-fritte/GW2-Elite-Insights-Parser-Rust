@@ -57,6 +57,7 @@ struct Options {
     buffs: bool,
     damage: bool,
     offsets: bool,
+    bench: bool,
 }
 
 fn options() -> Result<Options, Box<dyn Error>> {
@@ -65,8 +66,13 @@ fn options() -> Result<Options, Box<dyn Error>> {
     let mut with_buffs = false;
     let mut with_damage = false;
     let mut with_offsets = false;
+    let mut with_bench = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
+        if arg == "--bench" {
+            with_bench = true;
+            continue;
+        }
         if arg == "--offsets" {
             with_offsets = true;
             continue;
@@ -104,6 +110,7 @@ fn options() -> Result<Options, Box<dyn Error>> {
         buffs: with_buffs,
         damage: with_damage,
         offsets: with_offsets,
+        bench: with_bench,
     })
 }
 
@@ -115,6 +122,35 @@ struct FieldStats {
     examples: Vec<String>,
 }
 
+/// Times what the core computes per log: metadata, buffs, damage and the encounter timing.
+fn bench(opts: &Options, api: &Api, manifest: &[Entry]) {
+    use std::time::Instant;
+    let mut times: Vec<f64> = Vec::new();
+    for entry in manifest {
+        let path = opts.corpus.join(&entry.folder).join(&entry.file);
+        let Ok(data) = read_log(&path) else {
+            continue;
+        };
+        let start = Instant::now();
+        let _ = analyze(&data, api);
+        let _ = ei_core::pipeline::analyze_buffs(&data, api, None);
+        let _ = ei_core::pipeline::analyze_damage(&data, api, None);
+        let _ = ei_core::pipeline::analyze_offset(&data);
+        times.push(start.elapsed().as_secs_f64() * 1000.0);
+    }
+    times.sort_by(f64::total_cmp);
+    let sum: f64 = times.iter().sum();
+    let at = |percent: usize| times[(times.len() - 1) * percent / 100];
+    println!(
+        "bench: {} logs, sum {:.1} s, median {:.0} ms, p90 {:.0} ms, max {:.0} ms",
+        times.len(),
+        sum / 1000.0,
+        at(50),
+        at(90),
+        at(100)
+    );
+}
+
 #[allow(clippy::too_many_lines)]
 fn run() -> Result<bool, Box<dyn Error>> {
     let opts = options()?;
@@ -123,6 +159,10 @@ fn run() -> Result<bool, Box<dyn Error>> {
         None => Api::default(),
     };
     let manifest = read_manifest(&opts.manifest)?;
+    if opts.bench {
+        bench(&opts, &api, &manifest);
+        return Ok(true);
+    }
 
     let mut stats: BTreeMap<String, FieldStats> = BTreeMap::new();
     let mut failed_logs = 0usize;
