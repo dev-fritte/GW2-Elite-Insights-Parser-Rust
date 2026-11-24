@@ -82,6 +82,7 @@ pub fn compare_log(
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
+        let before: usize = stats.values().map(|s| s.mismatches).sum();
         for rb in &ref_buffs {
             let Some(id) = rb.get("id").and_then(Value::as_i64).filter(|&id| id >= 0) else {
                 // negative ids are graphs the C# parser derives (number of boons and so on)
@@ -119,6 +120,16 @@ pub fn compare_log(
                         &expected[from..expected.len().min(from + 4)]
                     ));
                 }
+            }
+        }
+        if std::env::var_os("PARITY_PLAYERS").is_some() {
+            let after: usize = stats.values().map(|s| s.mismatches).sum();
+            if after > before {
+                println!(
+                    "PLAYER {label} {}: {} differ",
+                    ours.player.character,
+                    after - before
+                );
             }
         }
     }
