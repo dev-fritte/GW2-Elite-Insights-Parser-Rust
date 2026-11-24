@@ -22,17 +22,17 @@ Vergleich mit `logStartOffset` und `durationMS` des C#-Referenz-JSON:
 
 | Größe | identisch |
 | --- | ---: |
-| Kampfbeginn | 94 von 103 (nur generisch: 63) |
-| Dauer | 90 von 103 (nur Tod-Fall: 27; mit Truhe: 68; mit Belohnungsdatensätzen und eigenen Regeln: 90) |
+| Kampfbeginn | 102 von 103 (nur generisch: 63) |
+| Dauer | 98 von 103 (nur Tod-Fall: 27; mit Truhe: 68; mit Belohnungsdatensätzen und eigenen Regeln: 98) |
 
 Aufruf: `ei-parity ... --offsets`; er listet je Encounter die Logs mit Abweichung und Beispiele.
 
-Die 13 Logs mit abweichender Dauer: 9 davon liegen in den fünf Encounter ohne passenden Kampfbeginn (Berg, Deimos, Beschworene Verschmelzung, Drachenleere, Seelenverzehrer), dazu Auge des Schicksals (2 Logs, `HasIntersectingLastGrasps`), Eparch (CM-Erkennung) und ein Cerus-Log mit 1 ms Abweichung (Ursache nicht gefunden).
+Die 5 Logs mit abweichender Dauer: Deimos (CM-Log, 1 Log; Kampfende über den Zusammenschluss bei 10 % und Angriffsziel-Ereignisse), Drachenleere (2 Logs; Kampfende über Angriffsziele von Soo-Won und Liftoff-Casts), Seelenverzehrer (1 Log; der Kampfbeginn liegt 1.000 ms daneben) und ein Cerus-Log mit 1 ms Abweichung (beide Ursachen nicht gefunden).
 
 ## Nicht portiert (Ursachen der Abweichungen)
 
-- **Kampfbeginn, 9 Logs in 5 Encounter:** BanditTrio (Berg; braucht Positionsdatensätze und die Trash-Mob-Liste), Deimos (Gefangener, Grün-Auswahl), ConjuredAmalgamate (Beschworene Verschmelzung; Effekt-GUID `CAArmSmash`, flüchtige Spezies), HarvestTemple (Drachenleere; Effekte) und Seelenverzehrer (keine eigene Regel, der generische Beginn liegt 1.000 ms daneben; Ursache nicht gefunden).
-- **Kampfende:** Kampfausstieg (`CombatExit`, nur Xera und Qadim als Rückfall), Eparch, Auge des Schicksals und die übrigen `CheckSuccess`-Überschreibungen (zuletzt rund 45 Dateien; Encounter ohne Log im Korpus sind ungeprüft).
+- **Kampfbeginn:** nur Seelenverzehrer (keine eigene Regel in C#; der Agent hat in Rust den ersten Datensatz bei 1 ms, die Referenz beginnt bei 1.001 ms; Ursache nicht gefunden). Die Bandit-Trio-Regel lässt die Prüfung der Trash-Mobs weg, weil die C#-Funktion IsInBoundingBox den Kasten auf einen Punkt verkleinert (sie vergleicht mit der ersten Ecke statt mit beiden) und nie zutrifft.
+- **Kampfende:** Deimos (Zusammenschluss bei 10 %, Angriffsziele), Drachenleere (HarvestTemple.CheckSuccess), Kampfausstieg (CombatExit, nur Xera und Qadim als Rückfall) und die übrigen CheckSuccess-Überschreibungen (zuletzt rund 45 Dateien; Encounter ohne Log im Korpus sind ungeprüft).
 - **Phasen, Zielliste, Schaden je Ziel und Phase, freundliche NPCs, Modus (CM), Mechaniken, Erfolgsbedingungen.**
 
 ## Nächste Schritte

@@ -36,7 +36,7 @@ Ohne die Barriere-Regel wichen 40 Spieler in vier Logs (Nikare, Kardinal Sabir) 
 - Schaden pro Phase und die Phasen selbst (6.1).
 - Weitere Encounter-Eingriffe in Schadensereignisse (z. B. `Samarog.MakeIntoAbsorbed`) und zusätzlich vom Parser erzeugte Schadensereignisse.
 - Logs vor arcdps-Build 20260501 (die alte Ergebnislogik).
-- Zeitverschiebung und Dauer bestimmt der Core selbst (Phase 7). Mit seinen Zeiten stimmen die Schadenswerte in den 90 Logs mit richtigem Beginn und Ende exakt; in den 13 anderen Logs weichen 61 von 950 Spielern ab (Gesamtschaden), 115 bei DPS (Rundung der Dauer). Mit den Referenzzeiten (`PARITY_REFERENCE_TIMING=1`) sind alle 950 identisch.
+- Zeitverschiebung und Dauer bestimmt der Core selbst (Phase 7). Mit seinen Zeiten stimmen die Schadenswerte in den 98 Logs mit richtigem Beginn und Ende exakt; in den 5 anderen Logs weichen 15 von 950 Spielern ab (Gesamtschaden), 42 bei DPS (Rundung der Dauer). Mit den Referenzzeiten (`PARITY_REFERENCE_TIMING=1`) sind alle 950 identisch.
 
 ## 6.5: Zwischenmessung
 
