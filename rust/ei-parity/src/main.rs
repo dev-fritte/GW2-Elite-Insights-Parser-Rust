@@ -8,6 +8,8 @@
 //! `<dir>` holds `<TargetId>_<File>.json` as written by `GW2EIParserReference`. Exit code 0 if
 //! every compared field of every log matches.
 
+mod buffs;
+
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -49,13 +51,19 @@ struct Options {
     reference: PathBuf,
     content: Option<PathBuf>,
     verbose: bool,
+    buffs: bool,
 }
 
 fn options() -> Result<Options, Box<dyn Error>> {
     let (mut corpus, mut manifest, mut reference, mut content) = (None, None, None, None);
     let mut verbose = false;
+    let mut with_buffs = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
+        if arg == "--buffs" {
+            with_buffs = true;
+            continue;
+        }
         if arg == "--verbose" {
             verbose = true;
             continue;
@@ -78,6 +86,7 @@ fn options() -> Result<Options, Box<dyn Error>> {
         reference: reference.ok_or("--reference is required")?,
         content,
         verbose,
+        buffs: with_buffs,
     })
 }
 
@@ -89,6 +98,7 @@ struct FieldStats {
     examples: Vec<String>,
 }
 
+#[allow(clippy::too_many_lines)]
 fn run() -> Result<bool, Box<dyn Error>> {
     let opts = options()?;
     let api = match opts.content.as_deref() {
@@ -100,6 +110,8 @@ fn run() -> Result<bool, Box<dyn Error>> {
     let mut stats: BTreeMap<String, FieldStats> = BTreeMap::new();
     let mut failed_logs = 0usize;
     let mut compared_logs = 0usize;
+    let mut buff_stats: BTreeMap<i64, buffs::BuffStats> = BTreeMap::new();
+    let mut buff_failed = 0usize;
 
     for entry in &manifest {
         let log_path = opts.corpus.join(&entry.folder).join(&entry.file);
@@ -108,9 +120,11 @@ fn run() -> Result<bool, Box<dyn Error>> {
             .join(format!("{}_{}.json", entry.target, entry.file));
         let label = format!("{} {}", entry.folder, entry.file);
 
-        let ours = match read_log(&log_path)
-            .map_err(|e| e.to_string())
-            .and_then(|d| analyze(&d, &api).map_err(|e| e.to_string()))
+        let data = read_log(&log_path).map_err(|e| e.to_string());
+        let ours = match data
+            .as_ref()
+            .map_err(Clone::clone)
+            .and_then(|d| analyze(d, &api).map_err(|e| e.to_string()))
         {
             Ok(a) => to_json(&a),
             Err(e) => {
@@ -122,6 +136,13 @@ fn run() -> Result<bool, Box<dyn Error>> {
         let reference: Value = serde_json::from_slice(&std::fs::read(&ref_path)?)
             .map_err(|e| format!("{}: {e}", ref_path.display()))?;
         compared_logs += 1;
+        if opts.buffs
+            && let Ok(d) = &data
+            && let Err(e) = buffs::compare_log(d, &api, &reference, &label, &mut buff_stats)
+        {
+            println!("BUFF FAIL {label}: {e}");
+            buff_failed += 1;
+        }
 
         for field in SHARED_FIELDS {
             record(
@@ -167,6 +188,25 @@ fn run() -> Result<bool, Box<dyn Error>> {
             for example in s.examples.iter().take(if opts.verbose { 50 } else { 3 }) {
                 println!("    {example}");
             }
+        }
+    }
+    if opts.buffs {
+        let compared: usize = buff_stats.values().map(|s| s.compared).sum();
+        let bad: usize = buff_stats.values().map(|s| s.mismatches).sum();
+        println!("buff graphs: {compared} compared, {bad} mismatches, {buff_failed} logs failed");
+        let mut worst: Vec<_> = buff_stats
+            .iter()
+            .filter(|(_, s)| s.mismatches > 0)
+            .collect();
+        worst.sort_by_key(|(_, s)| std::cmp::Reverse(s.mismatches));
+        for (id, s) in worst.iter().take(if opts.verbose { 40 } else { 12 }) {
+            println!("  buff {id}: {}/{} differ", s.mismatches, s.compared);
+            for e in s.examples.iter().take(1) {
+                println!("      {e}");
+            }
+        }
+        if bad > 0 || buff_failed > 0 {
+            all_match = false;
         }
     }
     Ok(all_match)
