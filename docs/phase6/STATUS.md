@@ -18,7 +18,7 @@ Encounter-Sonderfall: `LogLogicUtils.NegateDamageAgainstBarrier` (Zwillings-Larg
 
 ## Messung (103 Korpus-Logs, 950 Spieler)
 
-Vergleich gegen `players[].dpsAll[0]` des C#-Referenz-JSON (nur der Spieler selbst: `actorDamage` und verwandte Felder; Zeitraum ganzer Kampf, Zeitverschiebung und Dauer aus dem Referenz-JSON wie in Phase 5):
+Vergleich gegen `players[].dpsAll[0]` des C#-Referenz-JSON (nur der Spieler selbst: `actorDamage` und verwandte Felder; Zeitraum ganzer Kampf, Zeitverschiebung und Dauer vom Core (Phase 7; mit `PARITY_REFERENCE_TIMING=1` aus dem Referenz-JSON)):
 
 | Feld | verglichen | Abweichungen |
 | --- | ---: | ---: |
@@ -36,7 +36,7 @@ Ohne die Barriere-Regel wichen 40 Spieler in vier Logs (Nikare, Kardinal Sabir) 
 - Schaden pro Phase und die Phasen selbst (6.1).
 - Weitere Encounter-Eingriffe in Schadensereignisse (z. B. `Samarog.MakeIntoAbsorbed`) und zusätzlich vom Parser erzeugte Schadensereignisse.
 - Logs vor arcdps-Build 20260501 (die alte Ergebnislogik).
-- Zeitverschiebung und Dauer des Encounters (`GetLogOffset`) kommen weiterhin aus der Referenz.
+- Zeitverschiebung und Dauer bestimmt der Core selbst (Phase 7). Mit seinen Zeiten stimmen die Schadenswerte in den 90 Logs mit richtigem Beginn und Ende exakt; in den 13 anderen Logs weichen 61 von 950 Spielern ab (Gesamtschaden), 115 bei DPS (Rundung der Dauer). Mit den Referenzzeiten (`PARITY_REFERENCE_TIMING=1`) sind alle 950 identisch.
 
 ## 6.5: Zwischenmessung
 

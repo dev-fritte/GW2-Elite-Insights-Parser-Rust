@@ -37,4 +37,4 @@ Die 13 Logs mit abweichender Dauer: 9 davon liegen in den fünf Encounter ohne p
 
 ## Nächste Schritte
 
-Je Encounter ein Paket (Kampfbeginn, Ende, Phasen, Ziele), nach Häufigkeit im Korpus; jeweils mit dem Vergleich von `--offsets` und den Phasen aus dem Referenz-JSON als Gate. Danach können Zeitverschiebung und Dauer aus dem Referenz-JSON in den Phasen 5 und 6 durch die Werte des Cores ersetzt werden (derzeit stammen sie aus der Referenz).
+Je Encounter ein Paket (Kampfbeginn, Ende, Phasen, Ziele), nach Häufigkeit im Korpus; jeweils mit dem Vergleich von `--offsets` und den Phasen aus dem Referenz-JSON als Gate. Zeitverschiebung und Dauer der Phasen 5 und 6 kommen inzwischen aus dem Core.

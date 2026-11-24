@@ -43,7 +43,7 @@ Verlauf der Messung, jeweils mit dem Fund der Analyse:
 
 Aufruf: `ei-parity --corpus <Wurzel> --manifest docs/phase0/corpus-manifest.tsv --reference <refB1> --content <Content> --buffs [--verbose]`; mit `PARITY_PLAYERS=1` die Abweichungen je Spieler, mit `PARITY_EXTRAS=1` die Buffs nur im Core.
 
-**Eingabe aus der Referenz:** Die Zeitverschiebung des Encounters (`logStartOffset`, in C# `GetLogOffset` je Encounter, Phase 7) und die Dauer (`durationMS`) kommen aus dem Referenz-JSON, nicht aus dem Core. Ohne Encounter-Logik ist das nicht ableitbar.
+**Zeiten des Encounters:** Zeitverschiebung und Dauer bestimmt jetzt der Core selbst (`encounter.rs`, Phase 7). In 90 von 103 Logs sind beide identisch mit C#; dort stimmen die Buff-Verläufe wie oben (17 Abweichungen, alle in Matthias und bei der Regeneration). In den 13 Logs, in denen Beginn oder Ende noch fehlen (Berg, Deimos, Beschworene Verschmelzung, Drachenleere, Seelenverzehrer, Auge des Schicksals, Eparch), weichen die Verläufe ab: gesamt 3.485 von 37.495 Graphen bei Core-Zeiten. Mit der Umgebungsvariable `PARITY_REFERENCE_TIMING=1` nimmt `ei-parity` Verschiebung und Dauer wieder aus dem Referenz-JSON (dann gelten die Zahlen oben).
 
 ## Verbleibende Abweichungen (17 Graphen)
 
