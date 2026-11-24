@@ -416,6 +416,95 @@ impl Fight<'_> {
         phases
     }
 
+    /// Whether the target gains a buff during the fight (`Determined895` marks the healed phase of
+    /// the challenge mode of Ura).
+    fn gains_buff(&self, target: &Target, buff: i64) -> bool {
+        self.kept.events.iter().any(|e| {
+            e.state_change == sc::BUFF_APPLY
+                && i64::from(e.skill_id) == buff
+                && e.dst_agent != 0
+                && target.addresses.contains(&self.redirect(e.dst_agent))
+                && (0..=self.duration).contains(&(e.time - self.offset))
+        })
+    }
+
+    /// The stacks of an intensity buff on a target at a time (applications minus removals).
+    fn stacks_at(&self, target: &Target, buff: i64, time: i64) -> i64 {
+        let mut stacks = 0i64;
+        for e in self
+            .kept
+            .events
+            .iter()
+            .filter(|e| i64::from(e.skill_id) == buff)
+        {
+            if e.time - self.offset > time {
+                break;
+            }
+            let on = |a: u64| a != 0 && target.addresses.contains(&self.redirect(a));
+            match e.state_change {
+                sc::BUFF_APPLY | sc::BUFF_INITIAL if on(e.dst_agent) => stacks += 1,
+                sc::BUFF_REMOVE_SINGLE if on(e.src_agent) => stacks = (stacks - 1).max(0),
+                sc::BUFF_REMOVE_ALL if on(e.src_agent) => stacks = 0,
+                _ => {}
+            }
+        }
+        stacks
+    }
+
+    /// Ura (normal mode): the fight is split at 70% and 40% of her health. `None` for the
+    /// challenge mode with its healed phase.
+    fn ura(&self, main: usize) -> Option<Vec<SubPhase>> {
+        if self.gains_buff(&self.targets[main], skill::DETERMINED895) {
+            return None;
+        }
+        let end = self.duration;
+        let updates = self.health_updates(&self.targets[main]);
+        let first_below = |limit: f64| {
+            updates
+                .iter()
+                .find(|u| u.1 < limit && u.1 != 0.0)
+                .map(|u| u.0)
+        };
+        let new = |start: i64, end: i64| SubPhase {
+            start,
+            end,
+            targets: Vec::new(),
+        };
+        let mut phases = Vec::new();
+        let hp70 = first_below(70.0);
+        phases.push(new(0, hp70.unwrap_or(end)));
+        if let Some(hp70) = hp70 {
+            if let Some(hp40) = first_below(40.0) {
+                phases.push(new(hp70, hp40.min(end)));
+                phases.push(new(hp40, end));
+            }
+            phases.push(new(hp70, end));
+        }
+        for phase in &mut phases {
+            self.add_target(phase, main);
+        }
+        Some(phases)
+    }
+
+    /// Decima (normal mode): the fight alternates with her nova shield. The shield she gets while
+    /// she enrages (many charges) does not make a phase.
+    fn decima(&self, main: usize) -> Vec<SubPhase> {
+        let mut phases =
+            self.by_invuln(&[skill::NOVA_SHIELD], main, true, true, (0, self.duration));
+        for (i, phase) in phases.iter_mut().enumerate() {
+            let enrage = (i + 1) % 2 == 0
+                && self.stacks_at(
+                    &self.targets[main],
+                    skill::CHARGE_DECIMA,
+                    phase.start + SERVER_DELAY,
+                ) >= 10;
+            if !enrage {
+                self.add_target(phase, main);
+            }
+        }
+        phases
+    }
+
     /// Phases that alternate between the main target and a split into other targets: the odd
     /// phases belong to the main target, the even ones to the split targets.
     fn alternating(
@@ -536,6 +625,8 @@ pub fn encounter_phases(
             }
             phases
         }
+        species::URA => fight.ura(main)?,
+        species::DECIMA => fight.decima(main),
         species::MURSAAT_OVERSEER => fight.by_health(main, &[75.0, 50.0, 25.0, 0.0], (0, duration)),
         16_169 | 16_202 | 16_178 | 16_198 | 16_177 | 16_199 | 19_676 | 19_645 | 16_174 | 16_176 => {
             fight.golem(main)
