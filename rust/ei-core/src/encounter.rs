@@ -1293,6 +1293,92 @@ fn twisted_castle_end(c: &Ctx<'_>, offset: i64) -> End {
         },
     }
 }
+/// `GetBuffApplyRemoveSequence` (beginning with an apply, with a dummy remove at the end) as
+/// segments: the times the buff was on the target.
+fn buff_segments(c: &Ctx<'_>, buff: i64, target: &Agent) -> Vec<(i64, i64)> {
+    let mut segments = Vec::new();
+    let mut open: Option<i64> = None;
+    let events: Vec<&evtc_ingest::CombatRecord> = c
+        .kept
+        .events
+        .iter()
+        .filter(|e| {
+            i64::from(e.skill_id) == buff
+                && matches!(
+                    e.state_change,
+                    sc::BUFF_APPLY | sc::BUFF_INITIAL | sc::BUFF_REMOVE_ALL
+                )
+                && c.dst(e, target)
+        })
+        .collect();
+    for (i, e) in events.iter().enumerate() {
+        let is_apply = e.state_change != sc::BUFF_REMOVE_ALL;
+        match open {
+            None if is_apply => {
+                // an apply right after the previous remove cancels that remove
+                match segments.last() {
+                    Some(&(start, end)) if e.time - end < SERVER_DELAY => {
+                        segments.pop();
+                        open = Some(start);
+                    }
+                    _ => open = Some(e.time),
+                }
+            }
+            // only the last remove before another apply counts
+            Some(start)
+                if !is_apply
+                    && events
+                        .get(i + 1)
+                        .is_none_or(|n| n.state_change != sc::BUFF_REMOVE_ALL) =>
+            {
+                segments.push((start, e.time));
+                open = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(start) = open {
+        segments.push((start, target.last));
+    }
+    segments
+}
+
+/// `StatueOfDarkness.HasIntersectingLastGrasps`: the time both eyes were in their last grasp.
+fn intersecting_last_grasps(c: &Ctx<'_>, fate: &Agent, judgement: &Agent) -> Option<i64> {
+    let last_judge = *buff_segments(c, skill::LAST_GRASP_JUDGMENT, judgement).last()?;
+    let last_fate = *buff_segments(c, skill::LAST_GRASP_FATE, fate).last()?;
+    let intersects = !(last_fate.1 < last_judge.0 || last_judge.1 < last_fate.0);
+    intersects.then(|| last_judge.0.max(last_fate.0))
+}
+
+/// `StatueOfDarkness.CheckSuccess`: both eyes dead (the later death counts), else both eyes in
+/// their last grasp at once; without either the fight ends with the last eye.
+fn statue_of_darkness_end(c: &Ctx<'_>, fate: &Agent, player_addresses: &[u64]) -> End {
+    let Ok(judgement) = c.agent(species::target_id::EYE_OF_JUDGEMENT) else {
+        return generic_end(c, fate, player_addresses);
+    };
+    let kills = [
+        kill_time(c, fate, player_addresses),
+        kill_time(c, &judgement, player_addresses),
+    ];
+    if let [Some(a), Some(b)] = kills {
+        return End {
+            success: true,
+            time: a.max(b),
+        };
+    }
+    if let Some(time) = intersecting_last_grasps(c, fate, &judgement) {
+        return End {
+            success: true,
+            time,
+        };
+    }
+    End {
+        success: false,
+        time: fate.last.max(judgement.last),
+    }
+}
+
 /// The end of the fight in the time of `kept` (`LogData.SetSuccess`): a success ends 10 ms after
 /// the time the encounter logic names (at most the end of the log), a failure at the time itself.
 ///
@@ -1340,6 +1426,7 @@ pub fn log_end(
         }
         species::target_id::MAI_TRIN_RAID => aetherblade_end(&c, &target),
         species::target_id::HAUNTING_STATUE => twisted_castle_end(&c, offset),
+        species::target_id::EYE_OF_FATE => statue_of_darkness_end(&c, &target, player_addresses),
         16169 | 16202 | 16178 | 16198 | 16177 | 16199 | 19676 | 19645 | 16174 | 16176 => {
             golem_end(&c, &target)
         }
