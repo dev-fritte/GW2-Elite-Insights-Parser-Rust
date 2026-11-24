@@ -1379,6 +1379,88 @@ fn statue_of_darkness_end(c: &Ctx<'_>, fate: &Agent, player_addresses: &[u64]) -
     }
 }
 
+/// `SingleActor.GetHealth`: the maximum health the agent has around the middle of its time (or
+/// shortly before its last hit).
+fn actor_health(c: &Ctx<'_>, agent: &Agent) -> Option<u64> {
+    let updates: Vec<(i64, u64)> = c
+        .kept
+        .events
+        .iter()
+        .filter(|e| e.state_change == sc::MAX_HEALTH_UPDATE && c.src(e, agent))
+        .map(|e| (e.time, e.dst_agent))
+        .collect();
+    let last_damage = c.kept.events.iter().rev().find(|e| {
+        e.state_change == sc::COMBAT
+            && e.dst_agent != 0
+            && c.redirect(e.dst_agent) == agent.address
+            && crate::damage::health_damage(e) > 0
+    });
+    let mut check = i64::midpoint(agent.first, agent.last);
+    if let Some(d) = last_damage {
+        check = check.max(agent.first.max(d.time - 5000));
+    }
+    updates
+        .iter()
+        .rev()
+        .find(|(time, _)| *time < check + SERVER_DELAY)
+        .or_else(|| updates.iter().max_by_key(|(_, hp)| *hp))
+        .map(|&(_, hp)| hp)
+}
+
+/// `Eparch.CheckSuccess`: the first (normal mode) or third (challenge mode) determined buff the
+/// Eparch gets.
+fn eparch_end(c: &Ctx<'_>) -> Result<End, MissingKeyActors> {
+    /// `GW2Builds.June2024LonelyTowerCMRelease`.
+    const CM_RELEASE: u64 = 163_807;
+    /// `GW2Builds.June2024Balance`.
+    const JUNE_2024_BALANCE: u64 = 164_824;
+    /// `GW2Builds.April2026Balancepocalypse`.
+    const APRIL_2026_BALANCE: u64 = 198_816;
+    // eparchs that never cast (apart from drawing and stowing the weapon) are dummies
+    let eparch = species_agents(c.table, c.spans, 26_231)
+        .into_iter()
+        .find(|a| {
+            c.kept.events.iter().any(|e| {
+                e.state_change == sc::ANIMATION_START
+                    && c.src(e, a)
+                    && !matches!(
+                        i64::from(e.skill_id),
+                        skill::WEAPON_DRAW | skill::WEAPON_STOW
+                    )
+            })
+        })
+        .ok_or(MissingKeyActors)?;
+    let build = c.kept.gw2_build;
+    let release: u64 = if build >= APRIL_2026_BALANCE {
+        16_961_832
+    } else if build >= JUNE_2024_BALANCE {
+        22_833_236
+    } else {
+        32_618_906
+    };
+    let threshold = release * 95 / 100;
+    let health_cm =
+        build >= CM_RELEASE && actor_health(c, &eparch).is_some_and(|hp| hp >= threshold);
+    let fake_cm = [26_270, 26_260]
+        .iter()
+        .any(|&id| !species_agents(c.table, c.spans, id).is_empty());
+    let cm = health_cm || fake_cm;
+    let applies: Vec<i64> = buff_applies(c, skill::DETERMINED762, &eparch)
+        .map(|e| e.time)
+        .collect();
+    let wanted = if cm { 2 } else { 0 };
+    Ok(match applies.get(wanted) {
+        Some(&time) => End {
+            success: true,
+            time,
+        },
+        None => End {
+            success: false,
+            time: eparch.last,
+        },
+    })
+}
+
 /// The end of the fight in the time of `kept` (`LogData.SetSuccess`): a success ends 10 ms after
 /// the time the encounter logic names (at most the end of the log), a failure at the time itself.
 ///
@@ -1426,6 +1508,7 @@ pub fn log_end(
         }
         species::target_id::MAI_TRIN_RAID => aetherblade_end(&c, &target),
         species::target_id::HAUNTING_STATUE => twisted_castle_end(&c, offset),
+        species::target_id::EPARCH_LONELY_TOWER => eparch_end(&c)?,
         species::target_id::EYE_OF_FATE => statue_of_darkness_end(&c, &target, player_addresses),
         16169 | 16202 | 16178 | 16198 | 16177 | 16199 | 19676 | 19645 | 16174 | 16176 => {
             golem_end(&c, &target)
