@@ -65,7 +65,11 @@ internal static class TargetDump
                         sb.Append(id).Append('\t').Append(logic.GetType().Name).Append('\t').Append(kind).Append('\t').Append(i++).Append('\t').Append(Convert.ToInt32(e, CultureInfo.InvariantCulture)).Append('\n');
                     }
                 }
-            }
+                var sortIds = (System.Collections.IDictionary)logicType.GetMethod("GetTargetsSortIDs", Any)!.Invoke(logic, null)!;
+                foreach (System.Collections.DictionaryEntry e in sortIds)
+                {
+                    sb.Append(id).Append('\t').Append(logic.GetType().Name).Append('\t').Append("sort").Append('\t').Append(Convert.ToInt32(e.Value, CultureInfo.InvariantCulture)).Append('\t').Append(Convert.ToInt32(e.Key, CultureInfo.InvariantCulture)).Append('\n');
+                }            }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"{id}: {(ex.InnerException ?? ex).Message}");

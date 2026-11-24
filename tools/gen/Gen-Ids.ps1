@@ -173,7 +173,7 @@ $effects = Convert-Guids (Join-Path $helpers 'GUIDs\EffectGUIDs.cs') 'effect_gui
 $markers = Convert-Guids (Join-Path $helpers 'GUIDs\MarkerGUIDs.cs') 'marker_guids.rs' $guidHeader
 
 $mods = New-Object System.Collections.Generic.List[string]
-foreach ($m in 'buffs', 'effect_guids', 'marker_guids', 'skill_ids', 'species_ids') { $mods.Add("pub mod $m;") }
+foreach ($m in 'buffs', 'effect_guids', 'marker_guids', 'skill_ids', 'species_ids', 'targets') { $mods.Add("pub mod $m;") }
 Write-Rust 'mod.rs' '//! Constants generated from the C# ID files.' $mods
 $summary = "skill_ids=$skillCount species_consts=$constCount " + (($enumCounts.Keys | ForEach-Object { "$_=$($enumCounts[$_])" }) -join ' ') + " effect_guids=$effects marker_guids=$markers"
 Write-Output $summary

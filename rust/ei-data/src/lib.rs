@@ -8,7 +8,7 @@
 #[rustfmt::skip]
 pub mod generated;
 
-pub use generated::{buffs, effect_guids, marker_guids, skill_ids, species_ids};
+pub use generated::{buffs, effect_guids, marker_guids, skill_ids, species_ids, targets};
 
 #[cfg(test)]
 mod tests {
