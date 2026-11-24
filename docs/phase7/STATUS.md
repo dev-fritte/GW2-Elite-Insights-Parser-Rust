@@ -14,7 +14,7 @@ Stand 2026-11-24, Branch `phase1-ingest`. Code: `rust/ei-core/src/encounter.rs`,
 
 - **Generischer Kampfbeginn:** `LogLogic.GetLogOffset` mit `GetEnterCombatTime`, `GetPostLogStartNPCUpdateDamageEventTime`. Instanz-Logs: 0. Sonst die Zeit, zu der das Hauptziel nach dem `LogNPCUpdate`-Datensatz in den Kampf ging.
 - **Encounter-spezifische Überschreibungen von `GetLogOffset`** (22 Encounter): Cairn (Rückfall über das Ende des ersten Zaubers fehlt), Xera, Sabir, Arkk, Escort (McLeod), Dhuum, River, Ensolyss, MAMA, Siax, Skorvald, Kanaxai, Greer, Ura, Kela, Vloxx, Statue des Eises, Qadim, Old Lions Court, SpiritRace (nur die Zeit, nicht die Trigger-ID-Überschreibung), Cerus. Gemeinsame Bausteine: `GetLogOffsetBySpawn`, `GetLogOffsetByInvulnStart`, `GetEnterCombatForStart`, `GetFirstDamageEventTime`.
-- **Kampfende:** Der Erfolg über das Truhen-Gadget des Raid-Encounters (`FindChestGadgets`: Gadget mit Hitbox 100 an der Truhenposition, ohne Bewegung; Zeit = erstes Auftreten) hat Vorrang, dann der Tod des Hauptziels (Zeit des letzten Spielerschadens, höchstens der Tod), sonst ein Fehlschlag zur letzten Zeit des Ziels. Ein Erfolg endet 10 ms nach der Zeit, höchstens am Log-Ende. Eigene Regeln: Ankka (dritte lange Unverwundbarkeit), Minister Li (Wiederbelebung), Kanaxai (Unverwundbarkeit am Ende).
+- **Kampfende (`CheckSuccess`):** Reihenfolge wie in C#: bei den Raid-Wings zuerst der Belohnungsdatensatz (`CurrentRaidReward`), dann das Truhen-Gadget (`FindChestGadgets`: Gadget mit Hitbox 100 an der Truhenposition, ohne Bewegung; Zeit = erstes Auftreten), dann der Tod des Hauptziels (Zeit des letzten Spielerschadens, höchstens der Tod), sonst ein Fehlschlag zur letzten Zeit des Ziels. Bei den Icebrood-Strikes zuerst der Belohnungsdatensatz der Truhen. Ein Erfolg endet 10 ms nach der Zeit, höchstens am Log-Ende. Eigene Regeln: Ankka, Minister Li, Kanaxai, Ai (Sunqua), Mai Trin (Aetherblade), Old Lions Court, Golems, Twisted Castle und Spirit Race (alter Raid-Belohnungsdatensatz).
 
 ## Messung (103 Korpus-Logs, 26 Encounter)
 
@@ -23,16 +23,16 @@ Vergleich mit `logStartOffset` und `durationMS` des C#-Referenz-JSON:
 | Größe | identisch |
 | --- | ---: |
 | Kampfbeginn | 94 von 103 (nur generisch: 63) |
-| Dauer | 72 von 103 (nur Tod-Fall: 27; mit Truhen-Erfolg: 68) |
+| Dauer | 90 von 103 (nur Tod-Fall: 27; mit Truhe: 68; mit Belohnungsdatensätzen und eigenen Regeln: 90) |
 
 Aufruf: `ei-parity ... --offsets`; er listet je Encounter die Logs mit Abweichung und Beispiele.
 
-Die Abweichung von 1 bis 2 ms (7 Logs, z. B. Cerus, Qadim, Matthias, Desmina) ist ungeklärt; bei Cairn war der frühere Befund "2 ms" die Truhe (jetzt behoben). Größere Abweichungen haben eigene `CheckSuccess`-Regeln: Old Lions Court (3 Logs), Aetherblade (Mai Trin), Eparch, Auge des Schicksals, Stimme der Gefallenen, die Golems, Gramvolle und Twisted Castle.
+Die 13 Logs mit abweichender Dauer: 9 davon liegen in den fünf Encounter ohne passenden Kampfbeginn (Berg, Deimos, Beschworene Verschmelzung, Drachenleere, Seelenverzehrer), dazu Auge des Schicksals (2 Logs, `HasIntersectingLastGrasps`), Eparch (CM-Erkennung) und ein Cerus-Log mit 1 ms Abweichung (Ursache nicht gefunden).
 
 ## Nicht portiert (Ursachen der Abweichungen)
 
 - **Kampfbeginn, 9 Logs in 5 Encounter:** BanditTrio (Berg; braucht Positionsdatensätze und die Trash-Mob-Liste), Deimos (Gefangener, Grün-Auswahl), ConjuredAmalgamate (Beschworene Verschmelzung; Effekt-GUID `CAArmSmash`, flüchtige Spezies), HarvestTemple (Drachenleere; Effekte) und Seelenverzehrer (keine eigene Regel, der generische Beginn liegt 1.000 ms daneben; Ursache nicht gefunden).
-- **Kampfende:** Kampfausstieg (`CombatExit`, nur Xera und Qadim als Rückfall) und die `CheckSuccess`-Überschreibungen der übrigen Encounter (rund 50 Dateien).
+- **Kampfende:** Kampfausstieg (`CombatExit`, nur Xera und Qadim als Rückfall), Eparch, Auge des Schicksals und die übrigen `CheckSuccess`-Überschreibungen (zuletzt rund 45 Dateien; Encounter ohne Log im Korpus sind ungeprüft).
 - **Phasen, Zielliste, Schaden je Ziel und Phase, freundliche NPCs, Modus (CM), Mechaniken, Erfolgsbedingungen.**
 
 ## Nächste Schritte
