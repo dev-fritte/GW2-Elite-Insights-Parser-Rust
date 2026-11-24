@@ -87,7 +87,7 @@ impl std::fmt::Display for UnsupportedBuild {
 impl std::error::Error for UnsupportedBuild {}
 
 /// The ids of the condition buffs of a log (`SkillEvent.ConditionDamageBased`).
-fn condition_ids(ctx: &LogContext<'_>) -> HashSet<i64> {
+pub(crate) fn condition_ids(ctx: &LogContext<'_>) -> HashSet<i64> {
     BUFFS
         .iter()
         .filter(|d| {

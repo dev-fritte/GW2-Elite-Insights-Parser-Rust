@@ -223,6 +223,12 @@ pub struct PlayerDamage {
     pub totals: crate::damage::DamageTotals,
     /// Damage to each target of the encounter, in the order of `DamageAnalysis::targets`.
     pub to_targets: Vec<crate::damage::DamageTotals>,
+    /// Offensive counters over all foes.
+    pub offense: crate::offense::OffensiveStats,
+    /// Offensive counters per target, in the order of `DamageAnalysis::targets`.
+    pub target_offense: Vec<crate::offense::OffensiveStats>,
+    /// Damage taken and its counters.
+    pub defense: crate::offense::DefensiveStats,
 }
 
 /// The damage of all squad players and the length of the fight.
@@ -276,9 +282,18 @@ pub fn analyze_damage(
         let totals = crate::damage::actor_damage(&ctx, player.address, &negated, None)
             .map_err(|e| AnalysisError::Damage(e.to_string()))?;
         let mut to_targets = Vec::with_capacity(targets.len());
+        let mut target_offense = Vec::with_capacity(targets.len());
+        let offense = crate::offense::offensive_stats(&ctx, player.address, &negated, None)
+            .map_err(|e| AnalysisError::Damage(e.to_string()))?;
+        let defense = crate::offense::defensive_stats(&ctx, player.address)
+            .map_err(|e| AnalysisError::Damage(e.to_string()))?;
         for target in &targets {
             let addresses: std::collections::HashSet<u64> =
                 target.addresses.iter().copied().collect();
+            target_offense.push(
+                crate::offense::offensive_stats(&ctx, player.address, &negated, Some(&addresses))
+                    .map_err(|e| AnalysisError::Damage(e.to_string()))?,
+            );
             to_targets.push(
                 crate::damage::actor_damage(&ctx, player.address, &negated, Some(&addresses))
                     .map_err(|e| AnalysisError::Damage(e.to_string()))?,
@@ -288,6 +303,9 @@ pub fn analyze_damage(
             player,
             totals,
             to_targets,
+            offense,
+            target_offense,
+            defense,
         });
     }
     Ok(DamageAnalysis {
