@@ -127,6 +127,23 @@ foreach ($e in $enums.Keys) {
     $out.Add('}')
     $enumCounts[$e] = $enums[$e].Count
 }
+# Vector3 positions of the class (chest gadgets): x, y, z in game units
+$out.Add('/// `Vector3` constants of `SpeciesIDs` (positions of chest gadgets), as `[x, y, z]`.')
+$out.Add('pub mod positions {')
+$positionCount = 0
+$positionNames = @()
+foreach ($line in $lines) {
+    $l = Strip $line
+    if ($l -match '\bVector3\b') {
+        if ($l -match '^(public|internal|private) static readonly Vector3 (?<n>\w+) = new\((?<x>-?[\d.]+)f, (?<y>-?[\d.]+)f, (?<z>-?[\d.]+)f\);$') {
+            $positionNames += (ToScreaming $Matches['n'])
+            $out.Add("    pub const $(ToScreaming $Matches['n']): [f32; 3] = [$($Matches['x'])f32, $($Matches['y'])f32, $($Matches['z'])f32];")
+            $positionCount++
+        } else { throw "SpeciesIDs: cannot parse Vector3: $l" }
+    }
+}
+$out.Add('}')
+Check-Unique $positionNames 'SpeciesIDs positions'
 Write-Rust 'species_ids.rs' '//! NPC and gadget ids of the C# class ``SpeciesIDs``: its enums and its constants, same values.' $out
 
 # ---- GUIDs ----

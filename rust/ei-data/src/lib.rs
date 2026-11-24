@@ -4,7 +4,7 @@
 //! Nothing in `generated` is typed by hand: `tools/gen/Gen-Ids.ps1` writes it from the C# files,
 //! so the values follow the upstream source.
 
-#[allow(missing_docs, clippy::unreadable_literal)]
+#[allow(missing_docs, clippy::unreadable_literal, clippy::excessive_precision)]
 #[rustfmt::skip]
 pub mod generated;
 
