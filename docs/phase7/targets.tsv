@@ -651,6 +651,8 @@ Trigger	Logic	Kind	Index	Id
 22000	QadimThePeerless	trash	0	21987
 22000	QadimThePeerless	trash	1	21946
 22000	QadimThePeerless	trash	2	21953
+22000	QadimThePeerless	nobreakbar	0	21973
+22000	QadimThePeerless	nobreakbar	1	21996
 22000	QadimThePeerless	sort	0	22000
 22000	QadimThePeerless	sort	1	21973
 22000	QadimThePeerless	sort	2	21996
@@ -996,6 +998,8 @@ Trigger	Logic	Kind	Index	Id
 25705	CosmicObservatory	trash	0	26069
 25705	CosmicObservatory	trash	1	26016
 25705	CosmicObservatory	trash	2	25604
+25705	CosmicObservatory	nobreakbar	0	26000
+25705	CosmicObservatory	nobreakbar	1	25829
 25705	CosmicObservatory	sort	0	25705
 25705	CosmicObservatory	sort	1	25623
 25705	CosmicObservatory	sort	2	26000
@@ -1073,6 +1077,9 @@ Trigger	Logic	Kind	Index	Id
 26712	UraTheSteamshrieker	trash	2	-93
 26712	UraTheSteamshrieker	trash	3	-62
 26712	UraTheSteamshrieker	trash	4	-65
+26712	UraTheSteamshrieker	nobreakbar	0	26824
+26712	UraTheSteamshrieker	nobreakbar	1	26744
+26712	UraTheSteamshrieker	nobreakbar	2	26797
 26712	UraTheSteamshrieker	sort	0	26712
 26712	UraTheSteamshrieker	sort	1	26824
 26712	UraTheSteamshrieker	sort	2	26744
@@ -1176,6 +1183,9 @@ Trigger	Logic	Kind	Index	Id
 28106	NexusOfEternity	target	8	28065
 28106	NexusOfEternity	trash	0	-130
 28106	NexusOfEternity	trash	1	28056
+28106	NexusOfEternity	nobreakbar	0	28017
+28106	NexusOfEternity	nobreakbar	1	28033
+28106	NexusOfEternity	nobreakbar	2	28107
 28106	NexusOfEternity	sort	0	28106
 28106	NexusOfEternity	sort	1	27958
 28106	NexusOfEternity	sort	1	27934

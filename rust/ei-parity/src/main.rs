@@ -259,6 +259,20 @@ fn run() -> Result<bool, Box<dyn Error>> {
                 }
             }
         }
+        let breakbar: usize = offset_stats.values().map(|s| s.breakbar_ok).sum();
+        let breakbar_compared: usize = offset_stats.values().map(|s| s.breakbar_compared).sum();
+        println!("breakbar phases: {breakbar}/{breakbar_compared} logs identical");
+        for (folder, s) in &offset_stats {
+            if s.breakbar_ok != s.breakbar_compared {
+                println!(
+                    "  {folder}: breakbar phases {}/{}",
+                    s.breakbar_ok, s.breakbar_compared
+                );
+                for e in &s.breakbar_examples {
+                    println!("      {e}");
+                }
+            }
+        }
         if offsets != logs || durations != logs {
             all_match = false;
         }

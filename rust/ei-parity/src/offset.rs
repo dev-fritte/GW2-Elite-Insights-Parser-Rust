@@ -13,6 +13,9 @@ pub struct OffsetStats {
     pub duration_ok: usize,
     pub targets_ok: usize,
     pub target_examples: Vec<String>,
+    pub breakbar_ok: usize,
+    pub breakbar_compared: usize,
+    pub breakbar_examples: Vec<String>,
     pub examples: Vec<String>,
 }
 
@@ -63,6 +66,39 @@ pub fn compare_log(
         s.target_examples.push(format!(
             "{label}: rust {our_targets:?} reference {expected_targets:?}"
         ));
+    }
+    // breakbar phases, in logs whose target list is the reference's
+    if our_targets == expected_targets
+        && reference
+            .get("targets")
+            .and_then(Value::as_array)
+            .is_some_and(|t| t.len() == our_targets.len())
+    {
+        let mut expected: Vec<(i64, i64)> = reference
+            .get("phases")
+            .and_then(Value::as_array)
+            .map(|p| {
+                p.iter()
+                    .filter(|x| x.get("breakbarPhase").and_then(Value::as_bool) == Some(true))
+                    .filter_map(|x| Some((x.get("start")?.as_i64()?, x.get("end")?.as_i64()?)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut ours_phases: Vec<(i64, i64)> = ours
+            .breakbar_phases
+            .iter()
+            .map(|p| (p.start, p.end))
+            .collect();
+        expected.sort_unstable();
+        ours_phases.sort_unstable();
+        s.breakbar_compared += 1;
+        if ours_phases == expected {
+            s.breakbar_ok += 1;
+        } else if s.breakbar_examples.len() < 3 {
+            s.breakbar_examples.push(format!(
+                "{label}: rust {ours_phases:?} reference {expected:?}"
+            ));
+        }
     }
     if (!offset_ok || !duration_ok) && s.examples.len() < 3 {
         s.examples.push(format!(

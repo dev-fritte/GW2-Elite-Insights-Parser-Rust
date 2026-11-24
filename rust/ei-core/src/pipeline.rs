@@ -379,6 +379,8 @@ pub struct OffsetAnalysis {
     pub trigger_id: u16,
     /// Targets of the encounter with the offset applied (only species with a positive id).
     pub targets: Vec<crate::encounter::Target>,
+    /// The breakbar phases of the targets, with times relative to the start of the fight.
+    pub breakbar_phases: Vec<crate::phases::BreakbarPhase>,
 }
 
 /// Determines the encounter offset of a log.
@@ -403,13 +405,22 @@ pub fn analyze_offset(data: &[u8]) -> Result<OffsetAnalysis, AnalysisError> {
     );
     let addresses: Vec<u64> = players.iter().map(|p| p.address).collect();
     let offset = crate::encounter::log_offset(&kept, evtc.agents()).ok();
+    let fight_end =
+        crate::encounter::log_end(&kept, evtc.agents(), &addresses, offset.unwrap_or(0)).ok();
+    let targets = crate::encounter::log_targets(&kept, evtc.agents(), offset.unwrap_or(0));
+    let duration = fight_end.map_or(kept.log_end_time, |e| e - offset.unwrap_or(0));
     Ok(OffsetAnalysis {
         offset,
-        fight_end: crate::encounter::log_end(&kept, evtc.agents(), &addresses, offset.unwrap_or(0))
-            .ok(),
+        fight_end,
         log_end: kept.log_end_time,
         trigger_id: kept.trigger_id,
-        targets: crate::encounter::log_targets(&kept, evtc.agents(), offset.unwrap_or(0)),
+        breakbar_phases: crate::phases::breakbar_phases(
+            &kept,
+            &targets,
+            offset.unwrap_or(0),
+            duration,
+        ),
+        targets,
     })
 }
 

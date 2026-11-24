@@ -30,6 +30,8 @@ L '    /// Species that are friendly NPCs outside the squad.'
 L '    pub friendly: &''static [i32],'
 L '    /// Sort key per target species (`GetTargetsSortIDs`); unlisted species sort last.'
 L '    pub sort: &''static [(i32, i32)],'
+L '    /// Species that never get breakbar phases (`ForbidBreakbarPhasesFor`).'
+L '    pub no_breakbar: &''static [i32],'
 L '}'
 L ''
 L '/// All logics, ordered by trigger id.'
@@ -46,6 +48,7 @@ foreach ($g in ($rows | Group-Object { [int]$_.Trigger } | Sort-Object { [int]$_
     L "        trash: &[$(& $ids 'trash')],"
     L "        friendly: &[$(& $ids 'friendly')],"
     L "        sort: &[$sort],"
+    L "        no_breakbar: &[$(& $ids 'nobreakbar')],"
     L '    },'
 }
 L '];'

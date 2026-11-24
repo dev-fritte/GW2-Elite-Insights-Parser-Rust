@@ -13,6 +13,7 @@ pub mod keep;
 pub mod meta;
 pub mod model;
 pub mod offense;
+pub mod phases;
 pub mod pipeline;
 pub mod players;
 pub mod rules;

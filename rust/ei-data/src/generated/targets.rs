@@ -16,6 +16,8 @@ pub struct Logic {
     pub friendly: &'static [i32],
     /// Sort key per target species (`GetTargetsSortIDs`); unlisted species sort last.
     pub sort: &'static [(i32, i32)],
+    /// Species that never get breakbar phases (`ForbidBreakbarPhasesFor`).
+    pub no_breakbar: &'static [i32],
 }
 
 /// All logics, ordered by trigger id.
@@ -27,6 +29,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(1, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 2,
@@ -35,6 +38,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 15375,
@@ -43,6 +47,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15423, 15397, 15421, -60],
         friendly: &[],
         sort: &[(-16, 2), (15372, 1), (15375, 0), (15404, 1), (15430, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 15415,
@@ -51,6 +56,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15415, 15389, 15409, 15414, 15390, 15425],
         friendly: &[],
         sort: &[(-71, 3), (-70, 2), (-69, 1), (-68, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 15429,
@@ -59,6 +65,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[16024, 16005, -133, -134],
         friendly: &[],
         sort: &[(15429, 0), (15434, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 15438,
@@ -67,6 +74,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15426],
         friendly: &[],
         sort: &[(15420, 1), (15431, 1), (15433, 1), (15438, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 15884,
@@ -75,6 +83,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15640],
         friendly: &[15501, 15778, 15565],
         sort: &[(15553, 2), (15572, 3), (15597, 5), (15884, 0), (15916, 4), (15979, 6), (15999, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16088,
@@ -83,6 +92,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[16117, 7481, 16129, 16067, 16113, 16074, 16076, 16080, 16066, 16119, 16093, 16100, 16101, 16060, 16138, 16065, 16092, 16096, 16056, 16103, -47],
         friendly: &[-46, -123],
         sort: &[(16088, 0), (16125, 2), (16137, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16115,
@@ -91,6 +101,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[16108, 16105, 16114, 16139, 16068],
         friendly: &[],
         sort: &[(-9, 1), (16115, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16123,
@@ -99,6 +110,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[16064, 16071, 16077, 16104, 16079, 16085, 16124, 16132, 16081, 16091, 16107, 16131, -26],
         friendly: &[],
         sort: &[(-108, 1), (16123, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16125,
@@ -107,6 +119,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[16117, 7481, 16129, 16067, 16113, 16074, 16076, 16080, 16066, 16119, 16093, 16100, 16101, 16060, 16138, 16065, 16092, 16096, 16056, 16103, -47],
         friendly: &[-46, -123],
         sort: &[(16088, 0), (16125, 2), (16137, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16137,
@@ -115,6 +128,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[16117, 7481, 16129, 16067, 16113, 16074, 16076, 16080, 16066, 16119, 16093, 16100, 16101, 16060, 16138, 16065, 16092, 16096, 16056, 16103, -47],
         friendly: &[-46, -123],
         sort: &[(16088, 0), (16125, 2), (16137, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16169,
@@ -123,6 +137,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(16169, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16174,
@@ -131,6 +146,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(16174, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16176,
@@ -139,6 +155,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(16176, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16177,
@@ -147,6 +164,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(16177, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16178,
@@ -155,6 +173,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(16178, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16198,
@@ -163,6 +182,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(16198, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16199,
@@ -171,6 +191,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(16199, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16202,
@@ -179,6 +200,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(16202, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16235,
@@ -187,6 +209,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[16261, 16237, 16227, 16277, 16259, 16257, 16249],
         friendly: &[],
         sort: &[(16228, 1), (16235, 0), (16236, 1), (16244, 1), (16248, 1), (16264, 1), (16274, 1), (16278, 1), (16282, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16246,
@@ -195,6 +218,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[16238, 16283, 16251, 16287, 16221, 16226, -10, 16232, 16225],
         friendly: &[],
         sort: &[(-33, 4), (-32, 3), (-12, 5), (-11, 2), (-1, 1), (16246, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16247,
@@ -203,6 +227,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[16247],
         friendly: &[],
         sort: &[(-1, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16253,
@@ -211,6 +236,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[16224, 16255, 16219, 16229, 16240, 16265, 16281, 16242, 16220, 16272, 16266, 16288, 16256, -35],
         friendly: &[15014],
         sort: &[(-1, 4), (16222, 3), (16234, 1), (16241, 2), (16253, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 16948,
@@ -219,6 +245,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15960, 19684, 11277, 21566, 11329, 16721, 21634, 16912, 17033],
         friendly: &[],
         sort: &[(16948, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 17021,
@@ -227,6 +254,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15960, 19684, 11277, 21566, 11329, 16721, 21634, 17009],
         friendly: &[],
         sort: &[(16899, 1), (16906, 1), (16974, 1), (17021, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 17028,
@@ -235,6 +263,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15960, 19684, 11277, 21566, 11329, 16721, 21634, 17002, 16911],
         friendly: &[],
         sort: &[(17028, 0), (17068, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 17154,
@@ -243,6 +272,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[17161, 17355, 17213, 17233, 17332, 17303, 17221],
         friendly: &[17126, -30],
         sort: &[(-31, 5), (-1, 1), (17154, 0), (17163, 4), (17206, 2), (17335, 3)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 17172,
@@ -251,6 +281,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[17181, -131, -132],
         friendly: &[],
         sort: &[(17172, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 17188,
@@ -259,6 +290,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[-27],
         friendly: &[],
         sort: &[(17124, 1), (17188, 0), (17208, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 17194,
@@ -267,6 +299,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(17194, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 17632,
@@ -275,6 +308,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15960, 19684, 11277, 21566, 11329, 16721, 21634, 17732],
         friendly: &[],
         sort: &[(17578, 1), (17599, 1), (17632, 0), (17651, 1), (17673, 1), (17695, 1), (17770, 1), (17851, 1), (17929, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 17759,
@@ -283,6 +317,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15960, 19684, 11277, 21566, 11329, 16721, 21634, 11282, 11281, 11288, 17732, 16437, 16325, 16657, 16552, 17613, 17823],
         friendly: &[],
         sort: &[(17720, 3), (17730, 2), (17759, 0), (17893, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 17949,
@@ -291,6 +326,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15960, 19684, 11277, 21566, 11329, 16721, 21634, 17870, 17630, 17811, 17694, 17937],
         friendly: &[],
         sort: &[(-15, 1), (17949, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 19450,
@@ -299,6 +335,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[19807, 19759, 19481, -124],
         friendly: &[],
         sort: &[(19450, 0), (19628, 1), (19681, 2), (19831, 3)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 19536,
@@ -307,6 +344,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[19801, 19461, 19400, 19692, 19587, 19571],
         friendly: &[],
         sort: &[(19536, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 19645,
@@ -315,6 +353,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(19645, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 19651,
@@ -323,6 +362,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[19658, 19402],
         friendly: &[],
         sort: &[(19651, 0), (19844, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 19676,
@@ -331,6 +371,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(19676, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 19691,
@@ -339,6 +380,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(19691, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 19767,
@@ -347,6 +389,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[19396, 19474, 19464],
         friendly: &[],
         sort: &[(19422, 1), (19767, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 19828,
@@ -355,6 +398,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[19863, 19399, 19829, 19461, 19400, 19692],
         friendly: &[19828],
         sort: &[(-1, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 19844,
@@ -363,6 +407,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[19658, 19402],
         friendly: &[],
         sort: &[(19651, 0), (19844, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 20934,
@@ -371,6 +416,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[-49, 21236, 21078, 21163, 21150, 21223, 21221, 21100, 21218, 20944, 21049, 20961, 21092, 21244, 21140, 20980, 21083, 21053, 21064, 21040, 21173, 21257, 21288, 20972, 21264, 21145, 21290, 21161, 16504, 20975, 21196, 21054, 21147, 21192, 20969, 20951, 21010, 21037, 20956, 20940, 21032, 21261, 21116, 21189, 20968, 1085, 21024, 21070, 21252, 21182, 20966, 21095, 18184, 21019, 21164],
         friendly: &[],
         sort: &[(-13, 9), (-7, 5), (-6, 8), (-5, 10), (-4, 7), (20934, 0), (20997, 3), (21050, 6), (21073, 2), (21183, 4), (21285, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 21089,
@@ -379,6 +425,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(21089, 1), (21105, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 21105,
@@ -387,6 +434,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(21089, 1), (21105, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 21285,
@@ -395,6 +443,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[-49, 21236, 21078, 21163, 21150, 21223, 21221, 21100, 21218, 20944, 21049, 20961, 21092, 21244, 21140, 20980, 21083, 21053, 21064, 21040, 21173, 21257, 21288, 20972, 21264, 21145, 21290, 21161, 16504, 20975, 21196, 21054, 21147, 21192, 20969, 20951, 21010, 21037, 20956, 20940, 21032, 21261, 21116, 21189, 20968, 1085, 21024, 21070, 21252, 21182, 20966, 21095, 18184, 21019, 21164],
         friendly: &[],
         sort: &[(-13, 9), (-7, 5), (-6, 8), (-5, 10), (-4, 7), (20934, 0), (20997, 3), (21050, 6), (21073, 2), (21183, 4), (21285, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 21333,
@@ -403,6 +452,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[21325, 21337, 21326, -45],
         friendly: &[],
         sort: &[(21328, 1), (21333, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 21964,
@@ -411,6 +461,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[21955, 21975, 21957, 21961, -96, -99, -98, -97],
         friendly: &[],
         sort: &[(21964, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 22000,
@@ -419,6 +470,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[21987, 21946, 21953],
         friendly: &[],
         sort: &[(21973, 1), (21996, 2), (22000, 0)],
+        no_breakbar: &[21973, 21996],
     },
     Logic {
         trigger_id: 22006,
@@ -427,6 +479,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[-104],
         friendly: &[],
         sort: &[(-3, 1), (-2, 1), (22006, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 22154,
@@ -435,6 +488,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(22154, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 22343,
@@ -443,6 +497,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(22315, 2), (22343, 0), (22481, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 22481,
@@ -451,6 +506,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(22315, 2), (22343, 0), (22481, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 22492,
@@ -459,6 +515,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[22576, -40],
         friendly: &[],
         sort: &[(22436, 1), (22492, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 22521,
@@ -467,6 +524,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[22420, 22389, 22561, 22448, 22538, -39],
         friendly: &[],
         sort: &[(22521, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 22711,
@@ -475,6 +533,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[22628, 22627, 22691, 22625, 22699, 22608, 22635, 22683, 22721, 22672, 22713, 22667, 22678, 22610, 22615, 22612, 22656, 22640, 22717],
         friendly: &[],
         sort: &[(22711, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 22836,
@@ -483,6 +542,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[23093, 23102, 22882, 22833, 22856, 22938, 22897, 23005, 22870, 22993, 22953, 22283],
         friendly: &[],
         sort: &[(22836, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 23254,
@@ -491,6 +551,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15960, 19684, 11277, 21566, 11329, 16721, 21634, 23264, 23252, 23268, 23246, 23270, 23265, 23242, 23279, 23245],
         friendly: &[],
         sort: &[(-8, 1), (23254, 0), (23256, 2)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 23957,
@@ -499,6 +560,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[24634, 24976, 24171, 23673, 23839, 24258, 24158, 24969, 25289, -38],
         friendly: &[],
         sort: &[(23957, 0), (24348, 1), (24827, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 24033,
@@ -507,6 +569,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[24404, 25284, 25287, 23826],
         friendly: &[],
         sort: &[(-37, 7), (23656, 3), (24033, 0), (24396, 6), (24431, 4), (24768, 1), (25247, 2), (25262, 5)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 24266,
@@ -515,6 +578,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[23961, 23793],
         friendly: &[],
         sort: &[(23612, 4), (23618, 3), (24254, 2), (24261, 1), (24266, 0), (24485, 0), (24660, 5), (25236, 1), (25242, 3), (25259, 4), (25271, 5), (25280, 2)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 24375,
@@ -523,6 +587,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[23839, 23936, 24375, 24783, 24464, 23945, 24223, 24590, 25177, 24677, 25138, 24129, 24855, 21941, -50, -51, 24541, 23747],
         friendly: &[],
         sort: &[(-109, 0), (-23, 1), (-22, 0), (-21, 0), (-20, 0), (-19, 0), (-18, 0), (-17, 0), (23846, 1), (23956, 1), (23995, 1), (24450, 1), (24761, 1), (25025, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 24485,
@@ -531,6 +596,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[23961, 23793],
         friendly: &[],
         sort: &[(23612, 4), (23618, 3), (24254, 2), (24261, 1), (24266, 0), (24485, 0), (24660, 5), (25236, 1), (25242, 3), (25259, 4), (25271, 5), (25280, 2)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 25413,
@@ -539,6 +605,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[25424],
         friendly: &[],
         sort: &[(25413, 0), (25414, 3), (25415, 2), (25416, 5), (25419, 1), (25423, 4)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 25414,
@@ -547,6 +614,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[25424],
         friendly: &[],
         sort: &[(25413, 0), (25414, 3), (25415, 2), (25416, 5), (25419, 1), (25423, 4)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 25415,
@@ -555,6 +623,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[25424],
         friendly: &[],
         sort: &[(25413, 0), (25414, 3), (25415, 2), (25416, 5), (25419, 1), (25423, 4)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 25416,
@@ -563,6 +632,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[25424],
         friendly: &[],
         sort: &[(25413, 0), (25414, 3), (25415, 2), (25416, 5), (25419, 1), (25423, 4)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 25419,
@@ -571,6 +641,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[25424],
         friendly: &[],
         sort: &[(25413, 0), (25414, 3), (25415, 2), (25416, 5), (25419, 1), (25423, 4)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 25423,
@@ -579,6 +650,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[25424],
         friendly: &[],
         sort: &[(25413, 0), (25414, 3), (25415, 2), (25416, 5), (25419, 1), (25423, 4)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 25577,
@@ -587,6 +659,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15960, 19684, 11277, 21566, 11329, 16721, 21634],
         friendly: &[],
         sort: &[(25556, 1), (25561, 1), (25562, 1), (25563, 1), (25577, 0), (25580, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 25705,
@@ -595,6 +668,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[26069, 26016, 25604],
         friendly: &[],
         sort: &[(25623, 1), (25705, 0), (25829, 3), (26000, 2)],
+        no_breakbar: &[26000, 25829],
     },
     Logic {
         trigger_id: 25989,
@@ -603,6 +677,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[],
         friendly: &[],
         sort: &[(-58, 3), (-57, 3), (-56, 3), (-55, 3), (-54, 3), (-53, 3), (25645, 2), (25677, 1), (25686, 1), (25700, 1), (25747, 2), (25967, 1), (25989, 0), (26034, 1), (26049, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 26226,
@@ -611,6 +686,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15960, 19684, 11277, 21566, 11329, 16721, 21634],
         friendly: &[],
         sort: &[(26226, 0), (26257, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 26231,
@@ -619,6 +695,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[26193, 26193],
         friendly: &[],
         sort: &[(-59, 1), (26231, 0), (26260, 2), (26268, 3), (26270, 2)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 26257,
@@ -627,6 +704,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15960, 19684, 11277, 21566, 11329, 16721, 21634],
         friendly: &[],
         sort: &[(26226, 0), (26257, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 26712,
@@ -635,6 +713,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[-63, 26741, -93, -62, -65],
         friendly: &[],
         sort: &[(26712, 0), (26744, 2), (26797, 3), (26824, 1)],
+        no_breakbar: &[26824, 26744, 26797],
     },
     Logic {
         trigger_id: 26725,
@@ -643,6 +722,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[26776],
         friendly: &[],
         sort: &[(26725, 0), (26742, 1), (26771, 1), (26859, 1), (26862, 2)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 26774,
@@ -651,6 +731,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[26798, 26884, 26783, 26813, 26727, 26871, 26826, 26709, -66, -67, 26708, 26858, 26793, 26845],
         friendly: &[],
         sort: &[(26774, 0), (26856, 2), (26867, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 26867,
@@ -659,6 +740,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[26798, 26884, 26783, 26813, 26727, 26871, 26826, 26709, -66, -67, 26708, 26858, 26793, 26845],
         friendly: &[],
         sort: &[(26774, 0), (26856, 2), (26867, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 27010,
@@ -667,6 +749,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15960, 19684, 11277, 21566, 11329, 16721, 21634],
         friendly: &[],
         sort: &[(27010, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 27124,
@@ -675,6 +758,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[27658, 27667, 27654, 27663],
         friendly: &[],
         sort: &[(27124, 0), (27651, 1), (27655, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 28051,
@@ -683,6 +767,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15960, 19684, 11277, 21566, 11329, 16721, 21634, 28042, 27987, 27998],
         friendly: &[],
         sort: &[(27893, 3), (28051, 0), (28098, 2), (28108, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 28106,
@@ -691,6 +776,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[-130, 28056],
         friendly: &[],
         sort: &[(27929, 2), (27933, 1), (27934, 1), (27958, 1), (28017, 3), (28033, 3), (28065, 2), (28106, 0), (28107, 3)],
+        no_breakbar: &[28017, 28033, 28107],
     },
     Logic {
         trigger_id: 43488,
@@ -699,6 +785,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[23839, 23936, 24375, 24783, 24464, 23945, 24223, 24590, 25177, 24677, 25138, 24129, 24855, 21941, -50, -51, 24541, 23747],
         friendly: &[],
         sort: &[(-109, 0), (-23, 1), (-22, 0), (-21, 0), (-20, 0), (-19, 0), (-18, 0), (-17, 0), (23846, 1), (23956, 1), (23995, 1), (24450, 1), (24761, 1), (25025, 1)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 43974,
@@ -707,6 +794,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[21255, 21170, -87, -88, -89],
         friendly: &[-14],
         sort: &[(10142, 1), (37464, 2), (43974, 0)],
+        no_breakbar: &[],
     },
     Logic {
         trigger_id: 47188,
@@ -715,6 +803,7 @@ pub const LOGICS: &[Logic] = &[
         trash: &[15415, 15389, 15409, 15414, 15390, 15425],
         friendly: &[],
         sort: &[(-71, 3), (-70, 2), (-69, 1), (-68, 0)],
+        no_breakbar: &[],
     },
 ];
 

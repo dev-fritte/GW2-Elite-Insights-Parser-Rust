@@ -56,7 +56,7 @@ internal static class TargetDump
                 {
                     logic = detect.Invoke(null, new object[] { id, ad, settings, version })!;
                 }
-                foreach (var (kind, method) in new[] { ("target", "GetTargetsIDs"), ("trash", "GetTrashMobsIDs"), ("friendly", "GetFriendlyNPCIDs") })
+                foreach (var (kind, method) in new[] { ("target", "GetTargetsIDs"), ("trash", "GetTrashMobsIDs"), ("friendly", "GetFriendlyNPCIDs"), ("nobreakbar", "ForbidBreakbarPhasesFor") })
                 {
                     var list = (System.Collections.IEnumerable)logicType.GetMethod(method, Any)!.Invoke(logic, null)!;
                     int i = 0;
