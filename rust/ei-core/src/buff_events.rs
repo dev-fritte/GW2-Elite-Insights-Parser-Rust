@@ -353,13 +353,41 @@ pub fn simulate_agent(ctx: &LogContext<'_>, address: u64) -> Result<Vec<BuffResu
     let mut despawns = Vec::new();
     let mut last_aware = i64::MIN;
 
+    // Records without an agent address but with an instance id (despawns of this arcdps build)
+    // are given to the agent that has this instance id and is known around that time
+    // (`orphanedSrcInstidCombatItems` of `CompleteAgentsAndLogData`).
+    let mut agent_instance: u16 = 0;
+    let (mut first_aware, mut final_aware) = (i64::MAX, i64::MIN);
     for e in &shifted {
-        let is_src = crate::rules::src_is_agent(e.state_change)
+        let src = crate::rules::src_is_agent(e.state_change)
             && e.src_agent != 0
             && redirect(e.src_agent) == address;
-        let is_dst = crate::rules::dst_is_agent(e.state_change)
+        let dst = crate::rules::dst_is_agent(e.state_change)
             && e.dst_agent != 0
             && redirect(e.dst_agent) == address;
+        if src || dst {
+            if agent_instance == 0 {
+                agent_instance = if src { e.src_instid } else { e.dst_instid };
+            }
+            first_aware = first_aware.min(e.time);
+            final_aware = final_aware.max(e.time);
+        }
+    }
+    let known_around = |t: i64| {
+        (first_aware..=final_aware).contains(&(t - 300))
+            || (first_aware..=final_aware).contains(&(t + 300))
+    };
+    let orphan = |address_field: u64, instid: u16, t: i64| {
+        address_field == 0 && instid > 0 && instid == agent_instance && known_around(t)
+    };
+
+    for e in &shifted {
+        let is_src = crate::rules::src_is_agent(e.state_change)
+            && ((e.src_agent != 0 && redirect(e.src_agent) == address)
+                || orphan(e.src_agent, e.src_instid, e.time));
+        let is_dst = crate::rules::dst_is_agent(e.state_change)
+            && ((e.dst_agent != 0 && redirect(e.dst_agent) == address)
+                || orphan(e.dst_agent, e.dst_instid, e.time));
         match e.state_change {
             sc::SPAWN if is_src => spawns.push(e.time),
             sc::DESPAWN if is_src => despawns.push(e.time),
