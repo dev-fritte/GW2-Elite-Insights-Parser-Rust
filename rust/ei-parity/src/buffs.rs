@@ -51,12 +51,14 @@ fn reference_states(buff: &Value) -> Vec<(i64, i64)> {
 
 /// Compares all players of one log; returns the number of buff graphs compared and the mismatches
 /// are recorded per buff id in `stats`.
+#[allow(clippy::too_many_lines)]
 pub fn compare_log(
     data: &[u8],
     api: &Api,
     reference: &Value,
     label: &str,
     stats: &mut BTreeMap<i64, BuffStats>,
+    extra: &mut BTreeMap<i64, BuffStats>,
 ) -> Result<(), String> {
     let offset = reference
         .get("logStartOffset")
@@ -84,7 +86,11 @@ pub fn compare_log(
             .unwrap_or_default();
         let before: usize = stats.values().map(|s| s.mismatches).sum();
         for rb in &ref_buffs {
-            let Some(id) = rb.get("id").and_then(Value::as_i64).filter(|&id| id >= 0) else {
+            let Some(id) = rb
+                .get("id")
+                .and_then(Value::as_i64)
+                .filter(|&id| id >= 0 || ours.buffs.iter().any(|b| b.buff.id == id))
+            else {
                 // negative ids are graphs the C# parser derives (number of boons and so on)
                 continue;
             };
@@ -120,6 +126,37 @@ pub fn compare_log(
                         &expected[from..expected.len().min(from + 4)]
                     ));
                 }
+            }
+        }
+        // buffs the Rust simulation has that the reference does not list
+        for ours_buff in &ours.buffs {
+            let id = ours_buff.buff.id;
+            if ref_buffs
+                .iter()
+                .any(|rb| rb.get("id").and_then(Value::as_i64) == Some(id))
+            {
+                continue;
+            }
+            // the C# JSON skips hidden buffs and buffs without any time inside the log
+            let present = ours_buff.buff.classification != ei_data::buffs::Classification::Hidden
+                && ours_buff.items.iter().any(|i| {
+                    i.active_stacks > 0
+                        && i.clamped_duration(analysis.log_start, analysis.log_end) > 0
+                });
+            if !present {
+                continue;
+            }
+            if std::env::var_os("PARITY_EXTRAS").is_some() {
+                println!("EXTRA {label} | {} | {id}", ours.player.character);
+            }
+            let s = extra.entry(id).or_default();
+            s.compared += 1;
+            s.mismatches += 1;
+            if s.examples.len() < 2 {
+                s.examples.push(format!(
+                    "{label} {}: rust has the buff, the reference has not",
+                    ours.player.character
+                ));
             }
         }
         if std::env::var_os("PARITY_PLAYERS").is_some() {

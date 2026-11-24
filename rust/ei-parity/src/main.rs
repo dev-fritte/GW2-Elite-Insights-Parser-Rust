@@ -112,6 +112,7 @@ fn run() -> Result<bool, Box<dyn Error>> {
     let mut compared_logs = 0usize;
     let mut buff_stats: BTreeMap<i64, buffs::BuffStats> = BTreeMap::new();
     let mut buff_failed = 0usize;
+    let mut buff_extra: BTreeMap<i64, buffs::BuffStats> = BTreeMap::new();
 
     for entry in &manifest {
         let log_path = opts.corpus.join(&entry.folder).join(&entry.file);
@@ -138,7 +139,14 @@ fn run() -> Result<bool, Box<dyn Error>> {
         compared_logs += 1;
         if opts.buffs
             && let Ok(d) = &data
-            && let Err(e) = buffs::compare_log(d, &api, &reference, &label, &mut buff_stats)
+            && let Err(e) = buffs::compare_log(
+                d,
+                &api,
+                &reference,
+                &label,
+                &mut buff_stats,
+                &mut buff_extra,
+            )
         {
             println!("BUFF FAIL {label}: {e}");
             buff_failed += 1;
@@ -205,7 +213,15 @@ fn run() -> Result<bool, Box<dyn Error>> {
                 println!("      {e}");
             }
         }
-        if bad > 0 || buff_failed > 0 {
+        let extra: usize = buff_extra.values().map(|s| s.mismatches).sum();
+        println!("buffs only in the Rust simulation: {extra}");
+        for (id, s) in buff_extra.iter().take(if opts.verbose { 40 } else { 8 }) {
+            println!("  buff {id}: {} players", s.mismatches);
+            for e in s.examples.iter().take(1) {
+                println!("      {e}");
+            }
+        }
+        if bad > 0 || buff_failed > 0 || extra > 0 {
             all_match = false;
         }
     }

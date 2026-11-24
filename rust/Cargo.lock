@@ -200,6 +200,7 @@ name = "ei-parity"
 version = "0.1.0"
 dependencies = [
  "ei-core",
+ "ei-data",
  "evtc-ingest",
  "serde_json",
 ]
