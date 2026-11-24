@@ -3,7 +3,7 @@
 //! Port of the generic rule of `LogLogic.GetLogOffset` and its helpers in `LogLogicTimeUtils`.
 //! Encounters with their own rule are listed in [`log_offset`].
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use evtc_ingest::AgentTable;
 
@@ -906,23 +906,6 @@ pub fn log_offset(kept: &Kept, table: AgentTable<'_>) -> Result<i64, MissingKeyA
     }
 }
 
-/// The addresses of the main target of the encounter: the first agent of the species of the
-/// trigger id, with the agents that C# merges into it (the second Xera).
-#[must_use]
-pub fn main_target(kept: &Kept, table: AgentTable<'_>) -> Option<HashSet<u64>> {
-    let spans = spans(kept);
-    let first = species_agents(table, &spans, u32::from(kept.trigger_id))
-        .first()
-        .map(|a| a.address)?;
-    let mut set = HashSet::from([first]);
-    if i32::from(kept.trigger_id) == species::target_id::XERA
-        && let Some(second) = species_agents(table, &spans, 16_286).first()
-    {
-        set.insert(second.address);
-    }
-    Some(set)
-}
-
 /// The reward chest of an encounter, by the trigger id of the log (`LogLogic.ChestID`), as the
 /// position the chest gadget stands at.
 fn chest_position(trigger_id: u16) -> Option<[f32; 3]> {
@@ -1553,10 +1536,12 @@ fn flush(
 }
 
 /// A target of the encounter (`LogLogic.Targets`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
-    /// Address of the agent.
+    /// Address of the agent (of the first one if several were regrouped).
     pub address: u64,
+    /// Addresses of all agents that are this target.
+    pub addresses: Vec<u64>,
     /// Species id.
     pub species: i32,
     /// First time of the agent, with the offset applied.
@@ -1652,6 +1637,7 @@ pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
             candidates.push((
                 Target {
                     address: agent.address(),
+                    addresses: vec![agent.address()],
                     species,
                     first: first - offset,
                     last: last - offset,
@@ -1687,10 +1673,11 @@ pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
             if let (Some((_, g, count)), true) = (&mut group, same) {
                 g.first = g.first.min(cand.0.first);
                 g.last = g.last.max(cand.0.last);
+                g.addresses.push(cand.0.address);
                 *count += 1;
             } else {
                 flush(group.take(), &mut singles, &mut merged);
-                group = Some((index, cand.0, 1));
+                group = Some((index, cand.0.clone(), 1));
                 group_window = window(&cand.0);
             }
             previous = Some(cand);
@@ -1701,6 +1688,15 @@ pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
     let mut targets: Vec<Target> = singles.into_iter().map(|(_, t)| t).collect();
     targets.extend(merged);
     targets.retain(|t| t.last > 0);
+    // the second Xera is merged into the first one
+    if i32::from(kept.trigger_id) == species::target_id::XERA
+        && let Some(second) = species_agents(table, &spans, 16_286).first()
+        && let Some(first) = targets
+            .iter_mut()
+            .find(|t| t.species == species::target_id::XERA)
+    {
+        first.addresses.push(second.address);
+    }
     targets.sort_by_key(|t| t.first);
     // stable, like `OrderBy`; the default key is the position in the list
     let key = |t: &Target| {
