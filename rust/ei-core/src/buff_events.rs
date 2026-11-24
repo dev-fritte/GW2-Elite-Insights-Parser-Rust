@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use ei_buffs::{FULL_REMOVAL_BUT_IGNORE_FOR_WASTE, SimEvent, SimItem, Simulator, UNKNOWN_SRC};
-use ei_data::buffs::{BUFFS, BuffDef};
+use ei_data::buffs::{BUFFS, BuffDef, StackType};
 use evtc_ingest::CombatRecord;
 
 use crate::generated::state_change as sc;
@@ -23,6 +23,8 @@ const STATE_CHANGE_BUILD: i32 = 20_260_501;
 const SERVER_DELAY: i64 = 10;
 /// `ParserHelper.BuffSimulatorDelayConstant`.
 const SIM_DELAY: i64 = 15;
+/// `ArcDPSBuilds.BuffExtensionBroken`.
+const EXTENSION_BROKEN_BUILD: i32 = 20_230_905;
 /// `BuffRemove.Single` / `BuffRemove.Manual` in the `is_buff_remove` byte.
 const REMOVE_SINGLE: u8 = 2;
 /// The `IFF` byte values that are not friend (0) or foe (1) are `IFF.Unknown`.
@@ -118,6 +120,126 @@ struct Pending {
     initial: bool,
     /// `BuffApplyEvent.OriginalAppliedDuration`, 0 for other events.
     original_duration: i64,
+    /// Extension: the new duration the record reports. Deactivate: the duration it resets to.
+    extra: i64,
+    /// `false` for a remove event the C# parser does not feed to the simulator.
+    compliant: bool,
+}
+
+/// `CombatData.OffsetBuffExtensionEvents` for one buff on one agent: the new duration of arcdps
+/// extensions counts from the original stack, so the extension has to be corrected by the time the
+/// stack ran inactive.
+#[allow(clippy::too_many_lines)]
+fn offset_extensions(list: &mut [Pending], conditional_loss: bool) {
+    for i in 0..list.len() {
+        let SimEvent::Extend {
+            time, extension, ..
+        } = list[i].sim
+        else {
+            continue;
+        };
+        let instance = list[i].instance;
+        if instance == 0 {
+            continue;
+        }
+        let Some(apply) = list[..i].iter().rposition(|p| {
+            matches!(p.sim, SimEvent::Apply { time: t, .. } if t <= time) && p.instance == instance
+        }) else {
+            // an apply later in the list can not precede the extension in time order
+            continue;
+        };
+        let SimEvent::Apply {
+            time: apply_time,
+            duration: applied,
+            ..
+        } = list[apply].sim
+        else {
+            continue;
+        };
+        // the sequence: the apply, its stack events up to the extension, the previous extension
+        let previous_extension = list[..i]
+            .iter()
+            .rposition(|p| matches!(p.sim, SimEvent::Extend { .. }) && p.instance == instance);
+        let mut sequence: Vec<usize> = vec![apply];
+        for (j, p) in list.iter().enumerate() {
+            if p.instance == instance
+                && matches!(
+                    p.sim,
+                    SimEvent::Activate { .. } | SimEvent::Deactivate { .. }
+                )
+                && p.sim.time() >= apply_time
+                && p.sim.time() <= time
+            {
+                sequence.push(j);
+            }
+        }
+        if let Some(p) = previous_extension
+            && list[p].sim.time() >= apply_time
+        {
+            sequence.push(p);
+        }
+        sequence.sort_by_key(|&j| list[j].sim.time());
+
+        let mut active_time = 0_i64;
+        let mut previous_time = i64::MIN;
+        let mut original_stack_duration = 0_i64;
+        let mut added_extension = 0_i64;
+        for (n, &j) in sequence.iter().enumerate() {
+            let cur = &list[j];
+            if n == 0 {
+                original_stack_duration = cur.original_duration;
+                if cur.initial {
+                    active_time += cur.original_duration - applied;
+                }
+            } else {
+                match cur.sim {
+                    SimEvent::Activate { .. } => {
+                        if conditional_loss {
+                            added_extension += cur.sim.time() - previous_time;
+                            active_time += cur.sim.time() - previous_time;
+                        }
+                    }
+                    SimEvent::Deactivate { .. } => {
+                        active_time += cur.sim.time() - previous_time;
+                        original_stack_duration = cur.extra;
+                    }
+                    _ => {
+                        // an earlier extension: a stack reset in disguise if it is not longer
+                        if cur.extra <= original_stack_duration {
+                            active_time = 0;
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+            }
+            previous_time = cur.sim.time();
+        }
+        active_time += time - previous_time;
+        let new_duration = list[i].extra;
+        let extended = if new_duration <= original_stack_duration {
+            active_time
+        } else {
+            extension + added_extension
+        };
+        let new_duration = if new_duration <= original_stack_duration {
+            new_duration
+        } else {
+            new_duration - active_time
+        };
+        list[i].sim = SimEvent::Extend {
+            time,
+            extension: extended,
+            old_value: new_duration - extended,
+            src: match list[i].sim {
+                SimEvent::Extend { src, .. } => src,
+                _ => UNKNOWN_SRC,
+            },
+            src_healing: 0,
+            stack_id: instance,
+        };
+        list[i].compliant = new_duration >= 0;
+    }
 }
 
 /// `BuffsContainer`: stacks removed with their full original duration lose the time they already
@@ -230,8 +352,6 @@ pub fn simulate_agent(ctx: &LogContext<'_>, address: u64) -> Result<Vec<BuffResu
     let mut spawns = Vec::new();
     let mut despawns = Vec::new();
     let mut last_aware = i64::MIN;
-    let mut last_removed_regen: Option<(i64, i64, u32)> = None; // (time, duration, instance)
-    let mut regen_override: HashMap<usize, (i64, u32)> = HashMap::new();
 
     for e in &shifted {
         let is_src = crate::rules::src_is_agent(e.state_change)
@@ -250,51 +370,21 @@ pub fn simulate_agent(ctx: &LogContext<'_>, address: u64) -> Result<Vec<BuffResu
         }
         let target = match e.state_change {
             sc::BUFF_INITIAL | sc::BUFF_APPLY | sc::BUFF_CHANGE => is_dst,
-            sc::BUFF_REMOVE_SINGLE | sc::BUFF_REMOVE_ALL | sc::STACK_ACTIVE => is_src,
+            sc::BUFF_REMOVE_SINGLE
+            | sc::BUFF_REMOVE_ALL
+            | sc::STACK_ACTIVE
+            | sc::STACK_DEACTIVE => is_src,
             _ => false,
         };
         if !target {
             continue;
         }
         let id = i64::from(e.skill_id);
-        let Some(def) = defs.get(&id) else { continue };
-        let regen = def.stack_type == ei_data::buffs::StackType::Regeneration;
-        match convert(e) {
-            Converted::Event(p) => {
-                let list = per_buff.entry(id).or_default();
-                if regen
-                    && let SimEvent::Apply { time, .. } = p.sim
-                    && let Some((t, dur, inst)) = last_removed_regen.take()
-                    && time - t < SERVER_DELAY
-                {
-                    regen_override.insert(list.len(), (dur, inst));
-                }
-                add_to_list(list, p);
-            }
-            Converted::NotCompliant { removed_duration } => {
-                if regen && removed_duration > SIM_DELAY {
-                    last_removed_regen = Some((e.time, removed_duration, e.pad));
-                }
-            }
-            Converted::Ignored => {}
+        if !defs.contains_key(&id) {
+            continue;
         }
-    }
-    // the regeneration override is applied to the first apply after a removed stack
-    if let Some(list) = per_buff.get_mut(&718) {
-        for (index, (duration, instance)) in regen_override {
-            if let Some(Pending {
-                sim:
-                    SimEvent::Apply {
-                        overridden_duration,
-                        overridden_stack_id,
-                        ..
-                    },
-                ..
-            }) = list.get_mut(index)
-            {
-                *overridden_duration = duration;
-                *overridden_stack_id = instance;
-            }
+        if let Converted::Event(p) = convert(e) {
+            per_buff.entry(id).or_default().push(p);
         }
     }
 
@@ -307,27 +397,71 @@ pub fn simulate_agent(ctx: &LogContext<'_>, address: u64) -> Result<Vec<BuffResu
         instance: 0,
         initial: false,
         original_duration: 0,
+        extra: 0,
+        compliant: true,
     };
     let mut results = Vec::with_capacity(per_buff.len());
     let mut ids: Vec<i64> = per_buff.keys().copied().collect();
     ids.sort_unstable();
     for id in ids {
-        let mut list = per_buff.remove(&id).unwrap_or_default();
+        let mut raw = per_buff.remove(&id).unwrap_or_default();
         let def = defs[&id];
-        if has_stack_ids {
-            use ei_data::buffs::StackType;
-            if matches!(
+        // `CombatData.OffsetBuffExtensionEvents`, then the removal fix of `BuffsContainer`
+        if kept.version.build > EXTENSION_BROKEN_BUILD {
+            offset_extensions(
+                &mut raw,
+                def.stack_type == StackType::StackingConditionalLoss,
+            );
+            raw.retain(|p| !matches!(p.sim, SimEvent::Extend { extension, .. } if extension < 1));
+        }
+        if has_stack_ids
+            && matches!(
                 def.stack_type,
                 StackType::Stacking | StackType::StackingConditionalLoss
-            ) {
-                fix_removed_durations(
-                    &mut list,
-                    def.stack_type == StackType::StackingConditionalLoss,
-                );
-            }
+            )
+        {
+            fix_removed_durations(
+                &mut raw,
+                def.stack_type == StackType::StackingConditionalLoss,
+            );
         }
-        if def.stack_type != ei_data::buffs::StackType::Regeneration {
-            list.retain(|p| !matches!(p.sim, SimEvent::Activate { .. }));
+        // `BuffDictionary.Add` and `AddRegen`
+        let regen = def.stack_type == StackType::Regeneration;
+        let mut list: Vec<Pending> = Vec::with_capacity(raw.len());
+        let mut last_removed_regen: Option<(i64, i64, u32)> = None; // (time, duration, instance)
+        for mut p in raw {
+            if !p.compliant {
+                if regen
+                    && has_stack_ids
+                    && let SimEvent::RemoveSingle {
+                        time,
+                        removed_duration,
+                    } = p.sim
+                    && removed_duration > SIM_DELAY
+                {
+                    last_removed_regen = Some((time, removed_duration, p.instance));
+                }
+                continue;
+            }
+            match p.sim {
+                SimEvent::Activate { .. } if !regen => continue,
+                SimEvent::Deactivate { .. } => continue,
+                SimEvent::Apply {
+                    time,
+                    ref mut overridden_duration,
+                    ref mut overridden_stack_id,
+                    ..
+                } if regen => {
+                    if let Some((t, duration, instance)) = last_removed_regen.take()
+                        && time - t < SERVER_DELAY
+                    {
+                        *overridden_duration = duration;
+                        *overridden_stack_id = instance;
+                    }
+                }
+                _ => {}
+            }
+            add_to_list(&mut list, p);
         }
         for &t in &despawns {
             list.push(clear(t + SERVER_DELAY));
@@ -359,10 +493,6 @@ pub fn simulate_agent(ctx: &LogContext<'_>, address: u64) -> Result<Vec<BuffResu
 
 enum Converted {
     Event(Pending),
-    /// A remove event the C# parser does not feed to the simulator.
-    NotCompliant {
-        removed_duration: i64,
-    },
     Ignored,
 }
 
@@ -377,43 +507,60 @@ fn src_id(address: u64) -> u32 {
     }
 }
 
+fn pending(sim: SimEvent, instance: u32) -> Pending {
+    Pending {
+        sim,
+        instance,
+        initial: false,
+        original_duration: 0,
+        extra: 0,
+        compliant: true,
+    }
+}
+
 fn convert(e: &CombatRecord) -> Converted {
     let time = e.time;
     match e.state_change {
-        sc::BUFF_INITIAL | sc::BUFF_APPLY => Converted::Event(Pending {
-            sim: SimEvent::Apply {
-                time,
-                duration: i64::from(e.value),
-                src: src_id(e.src_agent),
-                src_healing: 0,
-                stack_id: e.pad,
-                added_active: e.is_shields > 0,
-                overridden_duration: 0,
-                overridden_stack_id: 0,
-            },
-            instance: e.pad,
-            initial: e.state_change == sc::BUFF_INITIAL,
-            original_duration: if e.state_change == sc::BUFF_INITIAL {
-                i64::from(e.buff_dmg)
-            } else {
-                i64::from(e.value)
-            },
-        }),
+        sc::BUFF_INITIAL | sc::BUFF_APPLY => {
+            let initial = e.state_change == sc::BUFF_INITIAL;
+            Converted::Event(Pending {
+                initial,
+                original_duration: if initial {
+                    i64::from(e.buff_dmg)
+                } else {
+                    i64::from(e.value)
+                },
+                ..pending(
+                    SimEvent::Apply {
+                        time,
+                        duration: i64::from(e.value),
+                        src: src_id(e.src_agent),
+                        src_healing: 0,
+                        stack_id: e.pad,
+                        added_active: e.is_shields > 0,
+                        overridden_duration: 0,
+                        overridden_stack_id: 0,
+                    },
+                    e.pad,
+                )
+            })
+        }
         sc::BUFF_CHANGE => {
             let new_duration = i64::from(e.overstack_value);
             let extension = i64::from(e.value.max(0));
             Converted::Event(Pending {
-                sim: SimEvent::Extend {
-                    time,
-                    extension,
-                    old_value: new_duration - extension,
-                    src: src_id(e.src_agent),
-                    src_healing: 0,
-                    stack_id: e.pad,
-                },
-                instance: e.pad,
-                initial: false,
-                original_duration: 0,
+                extra: new_duration,
+                ..pending(
+                    SimEvent::Extend {
+                        time,
+                        extension,
+                        old_value: new_duration - extension,
+                        src: src_id(e.src_agent),
+                        src_healing: 0,
+                        stack_id: e.pad,
+                    },
+                    e.pad,
+                )
             })
         }
         sc::STACK_ACTIVE => {
@@ -421,51 +568,50 @@ fn convert(e: &CombatRecord) -> Converted {
             if instance == 0 {
                 return Converted::Ignored;
             }
-            Converted::Event(Pending {
-                sim: SimEvent::Activate {
+            Converted::Event(pending(
+                SimEvent::Activate {
                     time,
                     stack_id: instance,
                 },
                 instance,
-                initial: false,
-                original_duration: 0,
+            ))
+        }
+        sc::STACK_DEACTIVE => {
+            if e.pad == 0 {
+                return Converted::Ignored;
+            }
+            Converted::Event(Pending {
+                extra: i64::from(e.value),
+                ..pending(SimEvent::Deactivate { time }, e.pad)
             })
         }
-        sc::BUFF_REMOVE_ALL => Converted::Event(Pending {
-            sim: SimEvent::RemoveAll {
+        sc::BUFF_REMOVE_ALL => Converted::Event(pending(
+            SimEvent::RemoveAll {
                 time,
                 removed_stacks: i32::from(e.result),
             },
-            instance: 0,
-            initial: false,
-            original_duration: 0,
-        }),
+            0,
+        )),
         sc::BUFF_REMOVE_SINGLE => match e.is_buff_remove {
             REMOVE_SINGLE => {
                 // `OverstackOrNaturalEnd`: unknown iff and no credited source
                 let natural_end = e.iff > IFF_FOE && e.dst_agent == 0;
-                if natural_end {
-                    Converted::NotCompliant {
-                        removed_duration: i64::from(e.value),
-                    }
-                } else {
-                    Converted::Event(Pending {
-                        sim: SimEvent::RemoveSingle {
+                Converted::Event(Pending {
+                    compliant: !natural_end,
+                    ..pending(
+                        SimEvent::RemoveSingle {
                             time,
                             removed_duration: i64::from(e.value),
                         },
-                        instance: e.pad,
-                        initial: false,
-                        original_duration: 0,
-                    })
-                }
+                        e.pad,
+                    )
+                })
             }
             _ => Converted::Ignored, // BuffRemove.Manual and unknown values
         },
         _ => Converted::Ignored,
     }
 }
-
 /// `BuffDictionary.AddToList`: drops useless extensions and duplicated initial applies.
 fn add_to_list(list: &mut Vec<Pending>, p: Pending) {
     match p.sim {
@@ -562,10 +708,8 @@ mod fix_tests {
 
     fn pending(sim: SimEvent, instance: u32, original_duration: i64) -> Pending {
         Pending {
-            sim,
-            instance,
-            initial: false,
             original_duration,
+            ..super::pending(sim, instance)
         }
     }
 
@@ -605,5 +749,57 @@ mod fix_tests {
         let mut list = vec![pending(remove, 7, 0)];
         fix_removed_durations(&mut list, true);
         assert_eq!(list[0].sim, remove);
+    }
+}
+
+#[cfg(test)]
+mod offset_tests {
+    use super::*;
+
+    #[test]
+    fn an_extension_counts_from_the_remaining_duration_of_the_stack() {
+        let apply = Pending {
+            original_duration: 6000,
+            ..pending(
+                SimEvent::Apply {
+                    time: 1000,
+                    duration: 6000,
+                    src: 1,
+                    src_healing: 0,
+                    stack_id: 5,
+                    added_active: false,
+                    overridden_duration: 0,
+                    overridden_stack_id: 0,
+                },
+                5,
+            )
+        };
+        // arcdps reports 9000 as the new duration: 6000 original plus 3000 extension
+        let extend = Pending {
+            extra: 9000,
+            ..pending(
+                SimEvent::Extend {
+                    time: 5280,
+                    extension: 3000,
+                    old_value: 6000,
+                    src: 1,
+                    src_healing: 0,
+                    stack_id: 5,
+                },
+                5,
+            )
+        };
+        let mut list = vec![apply, extend];
+        offset_extensions(&mut list, false);
+        // 4280 ms of the stack have run, so 1720 ms were left before the extension
+        assert!(matches!(
+            list[1].sim,
+            SimEvent::Extend {
+                extension: 3000,
+                old_value: 1720,
+                ..
+            }
+        ));
+        assert!(list[1].compliant);
     }
 }
