@@ -749,25 +749,210 @@ pub fn log_offset(kept: &Kept, table: AgentTable<'_>) -> Result<i64, MissingKeyA
     }
 }
 
-/// First instance id of every agent address that is seen in the records.
-fn instance_ids(kept: &Kept) -> HashMap<u64, u16> {
-    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
-    let mut ids: HashMap<u64, u16> = HashMap::new();
-    for e in &kept.events {
-        if src_is_agent(e.state_change) && e.src_agent != 0 && e.src_instid != 0 {
-            ids.entry(redirect(e.src_agent)).or_insert(e.src_instid);
-        }
-        if dst_is_agent(e.state_change) && e.dst_agent != 0 && e.dst_instid != 0 {
-            ids.entry(redirect(e.dst_agent)).or_insert(e.dst_instid);
-        }
-    }
-    ids
+/// The reward chest of an encounter, by the trigger id of the log (`LogLogic.ChestID`), as the
+/// position the chest gadget stands at.
+fn chest_position(trigger_id: u16) -> Option<[f32; 3]> {
+    use ei_data::species_ids::positions as p;
+    Some(match trigger_id {
+        15_438 => p::GUARDIAN_CHEST_POSITION,
+        15_429 => p::GORSEVAL_CHEST_POSITION,
+        15_375 => p::SABETHA_CHEST_POSITION,
+        16_123 => p::SLOTHASOR_CHEST_POSITION,
+        16_088 => p::CHEST_OF_PRISON_CAMP_POSITION,
+        16_115 => p::MATTHIAS_CHEST_POSITION,
+        16_253 => p::SIEGE_CHEST_POSITION,
+        16_235 => p::KEEP_CONSTRUCT_CHEST_POSITION,
+        16_246 => p::XERA_CHEST_POSITION,
+        17_194 => p::CAIRN_CHEST_POSITION,
+        17_154 => p::SAULS_TREASURE_CHEST_POSITION,
+        17_172 => p::RECREATION_ROOM_CHEST_POSITION,
+        17_188 => p::SAMAROG_CHEST_POSITION,
+        19_450 => p::DHUUM_CHEST_POSITION,
+        19_828 => p::CHEST_OF_SOULS_POSITION,
+        19_767 => p::CHEST_OF_DESMINA_POSITION,
+        43_974 => p::CA_CHEST_POSITION,
+        20_934 => p::QADIMS_CHEST_POSITION,
+        21_105 => p::TWIN_LARGOS_CHEST_POSITION,
+        22_006 => p::ADINAS_CHEST_POSITION,
+        22_000 => p::QADIM_THE_PEERLESS_CHEST_POSITION,
+        21_964 => p::SABIRS_CHEST_POSITION,
+        26_774 => p::DECIMAS_CHEST_POSITION,
+        26_725 => p::GREERS_CHEST_POSITION,
+        26_712 => p::URAS_CHEST_POSITION,
+        _ => return None,
+    })
 }
 
-/// The end of the fight in the time of `kept` (`LogData.SetSuccess`): by the death of the main
-/// target if the players killed it, else by the last time the target is known.
+/// `FindChestGadgets`: the gadget that stands at the chest position, never moves and has the
+/// chest hitbox. Returns the first time the gadget is known (`SetSuccessByChestGadget`).
+fn chest_gadget_time(c: &Ctx<'_>, position: [f32; 3]) -> Option<i64> {
+    // `InchDistanceThresholdSquared`
+    const THRESHOLD_SQUARED: f32 = std::f32::consts::SQRT_2 * std::f32::consts::SQRT_2;
+    let xy = |dst: u64| {
+        let bytes = dst.to_le_bytes();
+        (
+            f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+            f32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
+        )
+    };
+    let gadgets: Vec<Agent> = c
+        .table
+        .iter()
+        .filter(|a| agent_kind(*a) == AgentKind::Gadget && a.hitbox_width() == 100)
+        .filter_map(|a| {
+            c.spans.get(&a.address()).map(|&(first, last)| Agent {
+                address: a.address(),
+                first,
+                last,
+            })
+        })
+        .collect();
+    let moving = |address: u64| {
+        c.kept.events.iter().any(|e| {
+            e.state_change == sc::VELOCITY && c.redirect(e.src_agent) == address && {
+                let (x, y) = xy(e.dst_agent);
+                let z = f32::from_bits(e.value.cast_unsigned());
+                (x * x + y * y + z * z).sqrt() >= 1e-6
+            }
+        })
+    };
+    let at_position = |address: u64| {
+        c.kept.events.iter().any(|e| {
+            e.state_change == sc::POSITION && c.redirect(e.src_agent) == address && {
+                let (x, y) = xy(e.dst_agent);
+                (x - position[0]).powi(2) + (y - position[1]).powi(2) < THRESHOLD_SQUARED
+            }
+        })
+    };
+    gadgets
+        .iter()
+        .filter(|g| at_position(g.address) && !moving(g.address))
+        .map(|g| g.first)
+        .min()
+}
+
+/// The end of the fight and whether the encounter was a success (`LogLogic.CheckSuccess`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct End {
+    success: bool,
+    time: i64,
+}
+
+/// The apply events of a buff on an agent, in record order (`BuffApplyEvent`s).
+fn buff_applies<'a>(
+    c: &'a Ctx<'a>,
+    buff: i64,
+    target: &'a Agent,
+) -> impl Iterator<Item = &'a evtc_ingest::CombatRecord> {
+    c.kept.events.iter().filter(move |e| {
+        i64::from(e.skill_id) == buff
+            && matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+            && c.dst(e, target)
+    })
+}
+
+/// The generic success: reward chest, then the death of the target, else a failure at the last
+/// time the target is known.
+fn generic_end(c: &Ctx<'_>, target: &Agent, player_addresses: &[u64]) -> End {
+    let kept = c.kept;
+    if let Some(position) = chest_position(kept.trigger_id)
+        && let Some(time) = chest_gadget_time(c, position)
+    {
+        return End {
+            success: true,
+            time,
+        };
+    }
+    let from_players =
+        |e: &evtc_ingest::CombatRecord| player_addresses.contains(&c.redirect(e.src_agent));
+    let death = kept
+        .events
+        .iter()
+        .rev()
+        .find(|e| e.state_change == sc::CHANGE_DEAD && c.src(e, target));
+    if let Some(death) = death {
+        let last_damage = kept.events.iter().rev().find(|e| {
+            e.state_change == sc::COMBAT
+                && e.dst_agent != 0
+                && c.redirect(e.dst_agent) == target.address
+                && crate::damage::health_damage(e) > 0
+                && from_players(e)
+        });
+        return End {
+            success: true,
+            time: last_damage.map_or(death.time, |d| d.time.min(death.time)),
+        };
+    }
+    End {
+        success: false,
+        time: target.last,
+    }
+}
+
+/// `XunlaiJadeJunkyard.CheckSuccess`: after the generic check, the third lasting invulnerability
+/// of Ankka.
+fn ankka_end(c: &Ctx<'_>, target: &Agent, players: &[u64]) -> End {
+    let base = generic_end(c, target, players);
+    if base.success {
+        return base;
+    }
+    let applies: Vec<&evtc_ingest::CombatRecord> = buff_applies(c, skill::DETERMINED895, target)
+        .filter(|e| e.state_change == sc::BUFF_APPLY && e.value > i32::MAX / 2 && e.time >= 5000)
+        .collect();
+    match applies.as_slice() {
+        [_, _, third] => End {
+            success: true,
+            time: third.time,
+        },
+        _ => base,
+    }
+}
+
+/// `KainengOverlook.CheckSuccess`: Minister Li resurrects when the encounter is won.
+fn minister_li_end(c: &Ctx<'_>, players: &[u64]) -> Option<End> {
+    let _ = players;
+    let li = first_agent(c.table, c.spans, species::target_id::MINISTER_LI_CM)
+        .or_else(|| first_agent(c.table, c.spans, species::target_id::MINISTER_LI))?;
+    Some(match buff_applies(c, skill::RESURRECTION, &li).next() {
+        Some(apply) => End {
+            success: true,
+            time: apply.time,
+        },
+        None => End {
+            success: false,
+            time: li.last,
+        },
+    })
+}
+
+/// `Kanaxai.CheckSuccess`: the invulnerability she gets at the end, unless she despawns.
+fn kanaxai_end(c: &Ctx<'_>, target: &Agent) -> End {
+    let gain = buff_applies(c, skill::DETERMINED762, target).find(|e| e.time > 0);
+    if let Some(gain) = gain {
+        let despawned = c.kept.events.iter().any(|e| {
+            e.state_change == sc::DESPAWN
+                && c.src(e, target)
+                && (e.time - gain.time).abs() < SERVER_DELAY
+        });
+        if !despawned {
+            return End {
+                success: true,
+                time: gain.time,
+            };
+        }
+    }
+    End {
+        success: false,
+        time: target.last,
+    }
+}
+
+/// The end of the fight in the time of `kept` (`LogData.SetSuccess`): a success ends 10 ms after
+/// the time the encounter logic names (at most the end of the log), a failure at the time itself.
 ///
-/// Not ported: success through a chest gadget, combat exit and the rules of single encounters.
+/// Ported: the generic check (reward chest of the raid encounters, then the death of the main
+/// target), Ankka, Minister Li and Kanaxai. Not ported: combat exit and the `CheckSuccess` rules of
+/// the other encounters.
 ///
 /// # Errors
 /// [`MissingKeyActors`] if the main target is not in the log.
@@ -783,32 +968,20 @@ pub fn log_end(
         spans: &spans,
     };
     let target = c.agent(i32::from(kept.trigger_id))?;
-    let instances = instance_ids(kept);
-    let player_instances: Vec<u16> = player_addresses
-        .iter()
-        .filter_map(|a| instances.get(a).copied())
-        .collect();
-    let from_players = |e: &evtc_ingest::CombatRecord| {
-        player_addresses.contains(&c.redirect(e.src_agent))
-            || (e.src_master_instid != 0 && player_instances.contains(&e.src_master_instid))
+    let end = match i32::from(kept.trigger_id) {
+        species::target_id::ANKKA => ankka_end(&c, &target, player_addresses),
+        species::target_id::MINISTER_LI | species::target_id::MINISTER_LI_CM => {
+            minister_li_end(&c, player_addresses)
+                .unwrap_or_else(|| generic_end(&c, &target, player_addresses))
+        }
+        species::target_id::KANAXAI_SCYTHE_OF_HOUSE_AURKUS_CM => kanaxai_end(&c, &target),
+        _ => generic_end(&c, &target, player_addresses),
     };
-    let death = kept
-        .events
-        .iter()
-        .rev()
-        .find(|e| e.state_change == sc::CHANGE_DEAD && c.src(e, &target));
-    if let Some(death) = death {
-        let last_damage = kept.events.iter().rev().find(|e| {
-            e.state_change == sc::COMBAT
-                && e.dst_agent != 0
-                && c.redirect(e.dst_agent) == target.address
-                && crate::damage::health_damage(e) > 0
-                && from_players(e)
-        });
-        let time = last_damage.map_or(death.time, |d| d.time.min(death.time));
-        return Ok((time + SERVER_DELAY).min(kept.log_end_time));
-    }
-    Ok(target.last)
+    Ok(if end.success {
+        (end.time + SERVER_DELAY).min(kept.log_end_time)
+    } else {
+        end.time
+    })
 }
 
 #[cfg(test)]
