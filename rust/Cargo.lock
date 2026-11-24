@@ -164,6 +164,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ei-buffs"
+version = "0.1.0"
+dependencies = [
+ "ei-data",
+]
+
+[[package]]
 name = "ei-cli"
 version = "0.1.0"
 dependencies = [
