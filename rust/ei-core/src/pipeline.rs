@@ -6,7 +6,7 @@ use evtc_ingest::Evtc;
 use serde_json::{Map, Value, json};
 
 use crate::api::Api;
-use crate::keep::{KeepError, KeepSettings, keep_events};
+use crate::keep::{KeepError, KeepSettings, Kept, keep_events};
 use crate::meta::{Metadata, extract};
 use crate::players::{Player, find_players};
 
@@ -157,8 +157,7 @@ fn elementalist_kind(player: &Player) -> crate::buff_events::ElementalistKind {
 pub fn analyze_buffs(
     data: &[u8],
     api: &Api,
-    time_offset: i64,
-    duration: Option<i64>,
+    timing: Option<Timing>,
 ) -> Result<BuffAnalysis, AnalysisError> {
     let evtc = Evtc::parse(data)?;
     let header = evtc.header();
@@ -170,12 +169,13 @@ pub fn analyze_buffs(
         KeepSettings::default(),
     )?;
     let players = find_players(evtc.agents(), &kept, &api.specs, false);
+    let timing = timing.unwrap_or_else(|| core_timing(&kept, &evtc, &players));
     let ctx = crate::buff_events::LogContext {
         kept: &kept,
         gw2_build: kept.gw2_build,
         log_start: 0,
-        time_offset,
-        log_end: duration.unwrap_or(kept.log_end_time - time_offset),
+        time_offset: timing.offset,
+        log_end: timing.duration,
     };
     let mut out = Vec::with_capacity(players.len());
     for player in players {
@@ -191,6 +191,29 @@ pub fn analyze_buffs(
     })
 }
 
+/// The time shift and the length of the fight, in milliseconds: the time the encounter logic
+/// starts the fight at, and the time from there to its end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Timing {
+    /// Time of the records that counts as 0.
+    pub offset: i64,
+    /// Length of the fight.
+    pub duration: i64,
+}
+
+/// The timing the encounter logic determines for a log. If it cannot (a main target is missing),
+/// the offset is 0 and the fight lasts until the last record.
+fn core_timing(kept: &Kept, evtc: &Evtc<'_>, players: &[Player]) -> Timing {
+    let offset = crate::encounter::log_offset(kept, evtc.agents()).unwrap_or(0);
+    let addresses: Vec<u64> = players.iter().map(|p| p.address).collect();
+    let end = crate::encounter::log_end(kept, evtc.agents(), &addresses, offset)
+        .unwrap_or(kept.log_end_time);
+    Timing {
+        offset,
+        duration: end - offset,
+    }
+}
+
 /// Damage totals of every squad player.
 #[derive(Debug, Clone)]
 pub struct PlayerDamage {
@@ -200,6 +223,15 @@ pub struct PlayerDamage {
     pub totals: crate::damage::DamageTotals,
 }
 
+/// The damage of all squad players and the length of the fight.
+#[derive(Debug, Clone)]
+pub struct DamageAnalysis {
+    /// Length of the fight the damage was summed over.
+    pub duration: i64,
+    /// Damage per player.
+    pub players: Vec<PlayerDamage>,
+}
+
 /// Computes the damage of all squad players of a log.
 ///
 /// # Errors
@@ -207,9 +239,8 @@ pub struct PlayerDamage {
 pub fn analyze_damage(
     data: &[u8],
     api: &Api,
-    time_offset: i64,
-    duration: Option<i64>,
-) -> Result<Vec<PlayerDamage>, AnalysisError> {
+    timing: Option<Timing>,
+) -> Result<DamageAnalysis, AnalysisError> {
     let evtc = Evtc::parse(data)?;
     let header = evtc.header();
     let records: Vec<_> = evtc.events().collect();
@@ -220,12 +251,13 @@ pub fn analyze_damage(
         KeepSettings::default(),
     )?;
     let players = find_players(evtc.agents(), &kept, &api.specs, false);
+    let timing = timing.unwrap_or_else(|| core_timing(&kept, &evtc, &players));
     let ctx = crate::buff_events::LogContext {
         kept: &kept,
         gw2_build: kept.gw2_build,
         log_start: 0,
-        time_offset,
-        log_end: duration.unwrap_or(kept.log_end_time - time_offset),
+        time_offset: timing.offset,
+        log_end: timing.duration,
     };
     let species = crate::damage::barrier_negated_species(header.trigger_id());
     let negated: std::collections::HashSet<u64> = evtc
@@ -240,7 +272,10 @@ pub fn analyze_damage(
             .map_err(|e| AnalysisError::Damage(e.to_string()))?;
         out.push(PlayerDamage { player, totals });
     }
-    Ok(out)
+    Ok(DamageAnalysis {
+        duration: timing.duration,
+        players: out,
+    })
 }
 
 /// The encounter offset the core determines for a log and the end of the log.

@@ -6,6 +6,21 @@ use ei_core::api::Api;
 use ei_core::pipeline::analyze_buffs;
 use serde_json::Value;
 
+/// The offset and duration of the C# reference, if it should be used instead of the core's own.
+pub fn reference_timing(reference: &Value) -> Option<ei_core::pipeline::Timing> {
+    std::env::var_os("PARITY_REFERENCE_TIMING")?;
+    Some(ei_core::pipeline::Timing {
+        offset: reference
+            .get("logStartOffset")
+            .and_then(Value::as_i64)
+            .unwrap_or(0),
+        duration: reference
+            .get("durationMS")
+            .and_then(Value::as_i64)
+            .unwrap_or(0),
+    })
+}
+
 /// Counts per buff id.
 #[derive(Default)]
 pub struct BuffStats {
@@ -60,12 +75,8 @@ pub fn compare_log(
     stats: &mut BTreeMap<i64, BuffStats>,
     extra: &mut BTreeMap<i64, BuffStats>,
 ) -> Result<(), String> {
-    let offset = reference
-        .get("logStartOffset")
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    let duration = reference.get("durationMS").and_then(Value::as_i64);
-    let analysis = analyze_buffs(data, api, offset, duration).map_err(|e| e.to_string())?;
+    let timing = reference_timing(reference);
+    let analysis = analyze_buffs(data, api, timing).map_err(|e| e.to_string())?;
     let players = reference
         .get("players")
         .and_then(Value::as_array)

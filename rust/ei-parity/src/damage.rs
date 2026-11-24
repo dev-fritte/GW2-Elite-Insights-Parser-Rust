@@ -26,12 +26,10 @@ pub fn compare_log(
     stats: &mut BTreeMap<&'static str, DamageStats>,
 ) -> Result<(), String> {
     use ei_core::damage::DamageTotals;
-    let offset = reference
-        .get("logStartOffset")
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    let duration = reference.get("durationMS").and_then(Value::as_i64);
-    let players = analyze_damage(data, api, offset, duration).map_err(|e| e.to_string())?;
+    let timing = crate::buffs::reference_timing(reference);
+    let analysis = analyze_damage(data, api, timing).map_err(|e| e.to_string())?;
+    let duration = analysis.duration;
+    let players = analysis.players;
     let theirs_all = reference
         .get("players")
         .and_then(Value::as_array)
@@ -53,7 +51,7 @@ pub fn compare_log(
             continue;
         };
         let t = ours.totals;
-        let span = (0, duration.unwrap_or(0));
+        let span = (0, duration);
         // breakbar damage is a decimal number in the JSON
         {
             let expected = dps
