@@ -204,3 +204,19 @@ mod per_second_tests {
         assert!((totals.breakbar() - 600.5).abs() < 1e-9);
     }
 }
+
+/// The health damage of a combat record, 0 if it is not a damage record (`HealthDamage`).
+#[must_use]
+pub fn health_damage(e: &evtc_ingest::CombatRecord) -> i64 {
+    if e.is_buff == 0 {
+        if is_direct_hit(e.result) {
+            i64::from(e.value)
+        } else {
+            0
+        }
+    } else if is_buff_hit(e.result) {
+        i64::from(e.buff_dmg)
+    } else {
+        0
+    }
+}

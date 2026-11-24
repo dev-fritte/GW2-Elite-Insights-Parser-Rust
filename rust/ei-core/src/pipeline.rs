@@ -243,6 +243,48 @@ pub fn analyze_damage(
     Ok(out)
 }
 
+/// The encounter offset the core determines for a log and the end of the log.
+#[derive(Debug, Clone, Copy)]
+pub struct OffsetAnalysis {
+    /// `GetLogOffset` of the encounter, or `None` if the main target is not in the log.
+    pub offset: Option<i64>,
+    /// Time of the last record (before the offset is subtracted).
+    pub log_end: i64,
+    /// End of the fight as the encounter logic determines it (before the offset is subtracted).
+    pub fight_end: Option<i64>,
+    /// Trigger id of the log.
+    pub trigger_id: u16,
+}
+
+/// Determines the encounter offset of a log.
+///
+/// # Errors
+/// [`AnalysisError`] for unreadable logs.
+pub fn analyze_offset(data: &[u8]) -> Result<OffsetAnalysis, AnalysisError> {
+    let evtc = Evtc::parse(data)?;
+    let header = evtc.header();
+    let records: Vec<_> = evtc.events().collect();
+    let kept = keep_events(
+        &records,
+        header.trigger_id(),
+        header.build(),
+        KeepSettings::default(),
+    )?;
+    let players = find_players(
+        evtc.agents(),
+        &kept,
+        &crate::spec::SpecList::default(),
+        false,
+    );
+    let addresses: Vec<u64> = players.iter().map(|p| p.address).collect();
+    Ok(OffsetAnalysis {
+        offset: crate::encounter::log_offset(&kept, evtc.agents()).ok(),
+        fight_end: crate::encounter::log_end(&kept, evtc.agents(), &addresses).ok(),
+        log_end: kept.log_end_time,
+        trigger_id: kept.trigger_id,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
