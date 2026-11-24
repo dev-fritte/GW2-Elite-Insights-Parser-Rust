@@ -606,6 +606,58 @@ impl Fight<'_> {
         phases
     }
 
+    /// Old Lion's Court: each prototype has phases between its ley woven shieldings.
+    fn old_lions_court(&self, challenge_mode: bool) -> Vec<SubPhase> {
+        let find = |challenge: i32, normal: i32| {
+            self.targets
+                .iter()
+                .position(|t| t.species == challenge)
+                .or_else(|| self.targets.iter().position(|t| t.species == normal))
+        };
+        let prototypes = [
+            find(
+                species::PROTOTYPE_VERMILION_CM,
+                species::PROTOTYPE_VERMILION,
+            ),
+            find(species::PROTOTYPE_INDIGO_CM, species::PROTOTYPE_INDIGO),
+            find(species::PROTOTYPE_ARSENITE_CM, species::PROTOTYPE_ARSENITE),
+        ];
+        // Vermilion has to be there and start shielded, otherwise the log is incomplete
+        let Some(vermilion) = prototypes[0] else {
+            return Vec::new();
+        };
+        if self.stacks_at(&self.targets[vermilion], skill::LEY_WOVEN_SHIELDING, 500) == 0 {
+            return Vec::new();
+        }
+        let limit = if challenge_mode { 3 } else { 4 };
+        let mut phases = Vec::new();
+        for index in prototypes.into_iter().flatten() {
+            let death = self
+                .of_target(&self.targets[index], &[sc::CHANGE_DEAD])
+                .map(|e| e.time - self.offset)
+                .last();
+            let end = death.map_or(self.duration, |d| d.min(self.duration));
+            let mut sub = self.by_invuln(
+                &[
+                    skill::LEY_WOVEN_SHIELDING,
+                    skill::MALFUNCTIONING_LEY_WOVEN_SHIELDING,
+                ],
+                index,
+                false,
+                true,
+                (0, end),
+            );
+            if sub.len() > limit {
+                continue;
+            }
+            for phase in &mut sub {
+                self.add_target(phase, index);
+            }
+            phases.extend(sub);
+        }
+        phases
+    }
+
     /// Soulless Horror: the time before each howling death, the howling death and the rest.
     fn soulless_horror(&self, main: usize) -> Vec<SubPhase> {
         let end = self.duration;
@@ -763,6 +815,7 @@ impl Fight<'_> {
 /// The sub phases of an encounter, or `None` if its phases are not ported. Times are relative to
 /// the start of the fight, which lasts `duration`.
 #[must_use]
+#[allow(clippy::too_many_lines)] // a table of the encounters
 pub fn encounter_phases(
     kept: &Kept,
     targets: &[Target],
@@ -857,6 +910,8 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::PROTOTYPE_VERMILION => fight.old_lions_court(false),
+        species::PROTOTYPE_VERMILION_CM => fight.old_lions_court(true),
         species::MATTHIAS => fight.matthias(main),
         species::WHISPER_OF_JORMAG => fight.whisper_of_jormag(main),
         species::SOULLESS_HORROR => fight.soulless_horror(main),
