@@ -9,6 +9,7 @@
 //! every compared field of every log matches.
 
 mod buffs;
+mod damage;
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -52,14 +53,20 @@ struct Options {
     content: Option<PathBuf>,
     verbose: bool,
     buffs: bool,
+    damage: bool,
 }
 
 fn options() -> Result<Options, Box<dyn Error>> {
     let (mut corpus, mut manifest, mut reference, mut content) = (None, None, None, None);
     let mut verbose = false;
     let mut with_buffs = false;
+    let mut with_damage = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
+        if arg == "--damage" {
+            with_damage = true;
+            continue;
+        }
         if arg == "--buffs" {
             with_buffs = true;
             continue;
@@ -87,6 +94,7 @@ fn options() -> Result<Options, Box<dyn Error>> {
         content,
         verbose,
         buffs: with_buffs,
+        damage: with_damage,
     })
 }
 
@@ -112,6 +120,8 @@ fn run() -> Result<bool, Box<dyn Error>> {
     let mut compared_logs = 0usize;
     let mut buff_stats: BTreeMap<i64, buffs::BuffStats> = BTreeMap::new();
     let mut buff_failed = 0usize;
+    let mut damage_stats: BTreeMap<&'static str, damage::DamageStats> = BTreeMap::new();
+    let mut damage_failed = 0usize;
     let mut buff_extra: BTreeMap<i64, buffs::BuffStats> = BTreeMap::new();
 
     for entry in &manifest {
@@ -150,6 +160,14 @@ fn run() -> Result<bool, Box<dyn Error>> {
         {
             println!("BUFF FAIL {label}: {e}");
             buff_failed += 1;
+        }
+
+        if opts.damage
+            && let Ok(d) = &data
+            && let Err(e) = damage::compare_log(d, &api, &reference, &label, &mut damage_stats)
+        {
+            println!("DAMAGE FAIL {label}: {e}");
+            damage_failed += 1;
         }
 
         for field in SHARED_FIELDS {
@@ -195,6 +213,21 @@ fn run() -> Result<bool, Box<dyn Error>> {
             all_match = false;
             for example in s.examples.iter().take(if opts.verbose { 50 } else { 3 }) {
                 println!("    {example}");
+            }
+        }
+    }
+    if opts.damage {
+        println!("damage: {damage_failed} logs failed");
+        for (field, s) in &damage_stats {
+            println!(
+                "  {field:<10} {:>5} compared, {:>5} mismatches",
+                s.compared, s.mismatches
+            );
+            for e in s.examples.iter().take(if opts.verbose { 8 } else { 3 }) {
+                println!("      {e}");
+            }
+            if s.mismatches > 0 {
+                all_match = false;
             }
         }
     }
