@@ -270,7 +270,7 @@ fn run() -> Result<bool, Box<dyn Error>> {
                 "  {field:<10} {:>5} compared, {:>5} mismatches",
                 s.compared, s.mismatches
             );
-            for e in s.examples.iter().take(if opts.verbose { 80 } else { 3 }) {
+            for e in s.examples.iter().take(if opts.verbose { 5000 } else { 3 }) {
                 println!("      {e}");
             }
             if s.mismatches > 0 {

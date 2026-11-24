@@ -4,7 +4,9 @@
 //! Supported: logs of arcdps build 20260501 and later. Not ported: down contribution and crowd
 //! control, the status durations, boon strips and cleanses, dodges, and breakbar damage taken.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+
+use ei_data::buffs::{BUFFS, Classification};
 
 use crate::buff_events::LogContext;
 use crate::damage::{UnsupportedBuild, condition_ids};
@@ -15,32 +17,32 @@ const RESULT_ENUM_REWORK_BUILD: i32 = 20_260_501;
 /// A health damage event of the C# parser (`HealthDamageEvent` and its kinds).
 #[derive(Debug, Default, Clone, Copy)]
 #[allow(clippy::struct_excessive_bools)]
-struct Event {
+pub(crate) struct Event {
     /// A direct damage event (else buff damage or no damage at all).
-    direct: bool,
+    pub(crate) direct: bool,
     /// Interrupt, kill or down: no damage.
-    no_damage: bool,
-    health: i64,
-    shield: i64,
-    has_hit: bool,
-    crit: bool,
-    glance: bool,
-    leech: bool,
-    blind: bool,
-    absorbed: bool,
-    blocked: bool,
-    evaded: bool,
-    interrupted: bool,
-    downed: bool,
-    killed: bool,
-    over_ninety: bool,
-    flanking: bool,
-    against_moving: bool,
-    against_downed: bool,
+    pub(crate) no_damage: bool,
+    pub(crate) health: i64,
+    pub(crate) shield: i64,
+    pub(crate) has_hit: bool,
+    pub(crate) crit: bool,
+    pub(crate) glance: bool,
+    pub(crate) leech: bool,
+    pub(crate) blind: bool,
+    pub(crate) absorbed: bool,
+    pub(crate) blocked: bool,
+    pub(crate) evaded: bool,
+    pub(crate) interrupted: bool,
+    pub(crate) downed: bool,
+    pub(crate) killed: bool,
+    pub(crate) over_ninety: bool,
+    pub(crate) flanking: bool,
+    pub(crate) against_moving: bool,
+    pub(crate) against_downed: bool,
 }
 
 /// Builds the event of a combat record (`CombatEventFactory`), if it is one.
-fn classify(e: &evtc_ingest::CombatRecord) -> Option<Event> {
+pub(crate) fn classify(e: &evtc_ingest::CombatRecord) -> Option<Event> {
     let result = e.result;
     let mut ev = Event {
         over_ninety: e.is_ninety > 0,
@@ -165,7 +167,7 @@ pub struct OffensiveStats {
 }
 
 /// Counters of `DefensePerTargetStatistics` that come from damage events.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[allow(missing_docs)]
 pub struct DefensiveStats {
     pub damage_taken: i64,
@@ -189,6 +191,27 @@ pub struct DefensiveStats {
     pub interrupted: i64,
     pub dead_count: i64,
     pub dc_count: i64,
+    pub boon_strips: i64,
+    /// Seconds.
+    pub boon_strips_time: f64,
+    pub condition_cleanses: i64,
+    /// Seconds.
+    pub condition_cleanses_time: f64,
+}
+
+/// Counters of `SupportStatistics` that come from buff removals.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[allow(missing_docs)]
+pub struct SupportStats {
+    pub condition_cleanse: i64,
+    /// Seconds.
+    pub condition_cleanse_time: f64,
+    pub condition_cleanse_self: i64,
+    /// Seconds.
+    pub condition_cleanse_time_self: f64,
+    pub boon_strips: i64,
+    /// Seconds.
+    pub boon_strips_time: f64,
 }
 
 /// Damage of the agent at `address` to foes (`only_to`: just to those targets), like
@@ -329,6 +352,7 @@ fn add_offense(s: &mut OffensiveStats, ev: &Event, skill_id: u32, condition: boo
 ///
 /// # Errors
 /// [`UnsupportedBuild`] for logs older than the result enum rework.
+#[allow(clippy::too_many_lines)]
 pub fn defensive_stats(
     ctx: &LogContext<'_>,
     address: u64,
@@ -392,6 +416,139 @@ pub fn defensive_stats(
         s.evaded += i64::from(ev.evaded);
         s.interrupted += i64::from(ev.interrupted);
     }
+    // boons that were stripped and conditions that were cleansed, by anybody who is known
+    let (boons, condis) = (
+        buff_ids(ctx, Classification::Boon),
+        buff_ids(ctx, Classification::Condition),
+    );
+    let mut boon_time: HashMap<i64, i64> = HashMap::new();
+    let mut condi_time: HashMap<i64, i64> = HashMap::new();
+    for e in &kept.events {
+        let time = e.time - ctx.time_offset;
+        // a removal record: the source holds the buff, the destination removes it
+        if e.state_change != sc::BUFF_REMOVE_ALL
+            || e.src_agent == 0
+            || redirect(e.src_agent) != address
+            || e.dst_agent == 0
+            || time < ctx.log_start
+            || time > ctx.log_end
+        {
+            continue;
+        }
+        let id = i64::from(e.skill_id);
+        let removed = i64::from(e.value);
+        if boons.contains(&id) && redirect(e.dst_agent) != address {
+            s.boon_strips += 1;
+            let t = boon_time.entry(id).or_insert(0);
+            *t = (*t + removed).min(ctx.log_end);
+        } else if condis.contains(&id) {
+            s.condition_cleanses += 1;
+            let t = condi_time.entry(id).or_insert(0);
+            *t = (*t + removed).min(ctx.log_end);
+        }
+    }
+    s.boon_strips_time = seconds(boon_time.values().sum());
+    s.condition_cleanses_time = seconds(condi_time.values().sum());
+    Ok(s)
+}
+
+/// Milliseconds as seconds with three digits (ParserHelper.TimeDigit).
+fn seconds(ms: i64) -> f64 {
+    #[allow(clippy::cast_precision_loss)]
+    let value = ms as f64 / 1000.0;
+    (value * 1000.0).round() / 1000.0
+}
+
+/// The ids of the buffs of a classification that exist in the log.
+fn buff_ids(ctx: &LogContext<'_>, classification: Classification) -> HashSet<i64> {
+    BUFFS
+        .iter()
+        .filter(|d| {
+            ctx.gw2_build < d.max_build
+                && ctx.gw2_build >= d.min_build
+                && ctx.kept.version.build < d.max_evtc_build
+                && ctx.kept.version.build >= d.min_evtc_build
+        })
+        .filter(|d| d.classification == classification)
+        .map(|d| d.id)
+        .collect()
+}
+
+/// Strips and cleanses the agent at ddress did, like `SupportStatistics`. `players` are the
+/// addresses of the squad players.
+///
+/// # Errors
+/// [`UnsupportedBuild`] for logs older than the result enum rework.
+pub fn support_stats(
+    ctx: &LogContext<'_>,
+    address: u64,
+    players: &[u64],
+) -> Result<SupportStats, UnsupportedBuild> {
+    let kept = ctx.kept;
+    if kept.version.build < RESULT_ENUM_REWORK_BUILD {
+        return Err(UnsupportedBuild(kept.version.build));
+    }
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    let (boons, condis) = (
+        buff_ids(ctx, Classification::Boon),
+        buff_ids(ctx, Classification::Condition),
+    );
+    let instid = kept
+        .events
+        .iter()
+        .find(|e| e.src_agent != 0 && redirect(e.src_agent) == address && e.src_instid != 0)
+        .map_or(0, |e| e.src_instid);
+    let mut s = SupportStats::default();
+    // milliseconds per (ally, buff), clamped like SupportPerAllyStatistics
+    let mut times: HashMap<(u64, i64), i64> = HashMap::new();
+    let mut counts: HashMap<u64, i64> = HashMap::new();
+    let mut strip_times: HashMap<i64, i64> = HashMap::new();
+    for e in &kept.events {
+        let time = e.time - ctx.time_offset;
+        if e.state_change != sc::BUFF_REMOVE_ALL
+            || e.dst_agent == 0
+            || time < ctx.log_start
+            || time > ctx.log_end
+        {
+            continue;
+        }
+        let by_actor = redirect(e.dst_agent) == address
+            || (e.dst_master_instid != 0 && e.dst_master_instid == instid);
+        if !by_actor {
+            continue;
+        }
+        let id = i64::from(e.skill_id);
+        let removed = i64::from(e.value);
+        let dst = redirect(e.src_agent);
+        // IFF: 0 friend, 1 foe, 2 unknown
+        if condis.contains(&id) && e.iff == 0 && players.contains(&dst) {
+            *counts.entry(dst).or_insert(0) += 1;
+            let t = times.entry((dst, id)).or_insert(0);
+            *t = (*t + removed).min(ctx.log_end);
+        } else if boons.contains(&id) && e.iff != 0 {
+            s.boon_strips += 1;
+            let t = strip_times.entry(id).or_insert(0);
+            *t = (*t + removed).min(ctx.log_end);
+        }
+    }
+    let (mut cleanse_ms, mut self_ms) = (0, 0);
+    for (ally, count) in &counts {
+        let ms: i64 = times
+            .iter()
+            .filter(|((a, _), _)| a == ally)
+            .map(|(_, t)| *t)
+            .sum();
+        if *ally == address {
+            s.condition_cleanse_self += count;
+            self_ms += ms;
+        } else {
+            s.condition_cleanse += count;
+            cleanse_ms += ms;
+        }
+    }
+    s.condition_cleanse_time = seconds(cleanse_ms);
+    s.condition_cleanse_time_self = seconds(self_ms);
+    s.boon_strips_time = seconds(strip_times.values().sum());
     Ok(s)
 }
 

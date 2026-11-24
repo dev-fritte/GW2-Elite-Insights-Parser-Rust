@@ -229,6 +229,25 @@ pub struct PlayerDamage {
     pub target_offense: Vec<crate::offense::OffensiveStats>,
     /// Damage taken and its counters.
     pub defense: crate::offense::DefensiveStats,
+    /// Boon strips and condition cleanses the player did.
+    pub support: crate::offense::SupportStats,
+    /// The damage graphs of the player and its minions.
+    pub graphs: PlayerGraphs,
+}
+
+/// Cumulative damage per second (see [`crate::graphs::damage_graph`]).
+#[derive(Debug, Clone, Default)]
+pub struct PlayerGraphs {
+    /// All damage to foes, minions included.
+    pub damage: Vec<i64>,
+    /// Power damage to foes, minions included.
+    pub power: Vec<i64>,
+    /// Condition damage to foes, minions included.
+    pub condition: Vec<i64>,
+    /// Damage taken.
+    pub taken: Vec<i64>,
+    /// All damage to each target, in the order of `DamageAnalysis::targets`.
+    pub targets: Vec<Vec<i64>>,
 }
 
 /// The damage of all squad players and the length of the fight.
@@ -242,6 +261,31 @@ pub struct DamageAnalysis {
     pub targets: Vec<crate::encounter::Target>,
 }
 
+/// The graphs of one player.
+fn player_graphs(
+    ctx: &crate::buff_events::LogContext<'_>,
+    address: u64,
+    negated: &std::collections::HashSet<u64>,
+    targets: &[crate::encounter::Target],
+    duration: i64,
+) -> Result<PlayerGraphs, crate::damage::UnsupportedBuild> {
+    use crate::graphs::{DamageKind, Direction, damage_graph, hits};
+    let graph = |direction, kind, only_to: Option<&std::collections::HashSet<u64>>| {
+        hits(ctx, address, direction, kind, negated, only_to).map(|h| damage_graph(&h, duration))
+    };
+    let mut target_graphs = Vec::with_capacity(targets.len());
+    for target in targets {
+        let set: std::collections::HashSet<u64> = target.addresses.iter().copied().collect();
+        target_graphs.push(graph(Direction::Dealt, DamageKind::All, Some(&set))?);
+    }
+    Ok(PlayerGraphs {
+        damage: graph(Direction::Dealt, DamageKind::All, None)?,
+        power: graph(Direction::Dealt, DamageKind::Power, None)?,
+        condition: graph(Direction::Dealt, DamageKind::Condition, None)?,
+        taken: graph(Direction::Taken, DamageKind::All, None)?,
+        targets: target_graphs,
+    })
+}
 /// Computes the damage of all squad players of a log.
 ///
 /// # Errors
@@ -277,6 +321,7 @@ pub fn analyze_damage(
         .map(|a| a.address())
         .collect();
     let targets = crate::encounter::log_targets(&kept, evtc.agents(), timing.offset);
+    let player_addresses: Vec<u64> = players.iter().map(|p| p.address).collect();
     let mut out = Vec::with_capacity(players.len());
     for player in players {
         let totals = crate::damage::actor_damage(&ctx, player.address, &negated, None)
@@ -286,6 +331,8 @@ pub fn analyze_damage(
         let offense = crate::offense::offensive_stats(&ctx, player.address, &negated, None)
             .map_err(|e| AnalysisError::Damage(e.to_string()))?;
         let defense = crate::offense::defensive_stats(&ctx, player.address)
+            .map_err(|e| AnalysisError::Damage(e.to_string()))?;
+        let support = crate::offense::support_stats(&ctx, player.address, &player_addresses)
             .map_err(|e| AnalysisError::Damage(e.to_string()))?;
         for target in &targets {
             let addresses: std::collections::HashSet<u64> =
@@ -299,6 +346,8 @@ pub fn analyze_damage(
                     .map_err(|e| AnalysisError::Damage(e.to_string()))?,
             );
         }
+        let graphs = player_graphs(&ctx, player.address, &negated, &targets, timing.duration)
+            .map_err(|e| AnalysisError::Damage(e.to_string()))?;
         out.push(PlayerDamage {
             player,
             totals,
@@ -306,6 +355,8 @@ pub fn analyze_damage(
             offense,
             target_offense,
             defense,
+            support,
+            graphs,
         });
     }
     Ok(DamageAnalysis {

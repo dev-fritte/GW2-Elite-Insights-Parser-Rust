@@ -8,6 +8,7 @@ pub mod buff_events;
 pub mod csr;
 pub mod damage;
 pub mod encounter;
+pub mod graphs;
 pub mod keep;
 pub mod meta;
 pub mod model;
