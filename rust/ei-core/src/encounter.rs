@@ -704,6 +704,75 @@ fn cerus_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
     })
 }
 
+/// `Deimos.GetShackledPrisonerFirstOrDefault`: the first agent with the maximum health of the
+/// shackled prisoner.
+fn shackled_prisoner(c: &Ctx<'_>) -> Option<Agent> {
+    let update = c.first_with(|e| {
+        e.state_change == sc::MAX_HEALTH_UPDATE
+            && e.dst_agent == 1_000_980
+            && c.spans.contains_key(&c.redirect(e.src_agent))
+            && c.table
+                .iter()
+                .any(|a| a.address() == c.redirect(e.src_agent) && a.profession() != 0)
+    })?;
+    let address = c.redirect(update.src_agent);
+    let &(first, last) = c.spans.get(&address)?;
+    Some(Agent {
+        address,
+        first,
+        last,
+    })
+}
+
+/// `Deimos.GetLogOffset`: the loss of his spawn protection, or the shackled prisoner's first health
+/// update if the pre event ran before.
+fn deimos_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    /// `PreEventConsiderationConstant`.
+    const PRE_EVENT: i64 = 5000;
+    let deimos = c.agent(species::target_id::DEIMOS)?;
+    let Some(remove) = c.first_with(|e| {
+        e.state_change == sc::BUFF_REMOVE_ALL
+            && i64::from(e.skill_id) == skill::SPAWN_PROTECTION
+            && c.dst(e, &deimos)
+    }) else {
+        return Ok(0);
+    };
+    let mut start = remove.time;
+    if start > PRE_EVENT
+        && let Some(prisoner) = shackled_prisoner(c)
+    {
+        let green = c.first_with(|e| {
+            e.state_change == sc::BUFF_APPLY
+                && i64::from(e.skill_id) == skill::DEIMOS_SELECTED_BY_GREEN
+        });
+        let health = c.first_with(|e| e.state_change == sc::HEALTH_UPDATE && c.src(e, &prisoner));
+        if let (Some(green), Some(health)) = (green, health)
+            && green.time < start
+            && health.dst_agent == 10_000
+        {
+            start = health.time;
+        }
+    }
+    Ok(start)
+}
+
+/// `BanditTrio.GetLogOffset`: the first appearance of Berg, Zane and Narella. The C# check for
+/// bandits in the box in front of the trio never matches (`IsInBoundingBox` compares against the
+/// first corner twice, so the box is a point), and is left out.
+fn bandit_trio_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    use species::target_id as id;
+    if c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE)
+        .is_none()
+    {
+        return Ok(0);
+    }
+    let mut start = i64::MAX;
+    for trio in [id::BERG, id::ZANE, id::NARELLA] {
+        start = start.min(c.agent(trio)?.first);
+    }
+    Ok(start)
+}
+
 /// An encounter specific `GetLogOffset`.
 type Rule = fn(&Ctx<'_>) -> Result<i64, MissingKeyActors>;
 
@@ -733,6 +802,8 @@ fn rule_for(trigger_id: u16) -> Option<Rule> {
         id::PROTOTYPE_VERMILION | id::PROTOTYPE_VERMILION_CM => old_lions_court_offset,
         id::ETHEREAL_BARRIER_GADGET => spirit_race_offset,
         25989 => cerus_offset,
+        id::DEIMOS => deimos_offset,
+        id::BERG => bandit_trio_offset,
         _ => return None,
     })
 }
