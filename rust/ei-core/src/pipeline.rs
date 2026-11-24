@@ -277,9 +277,11 @@ pub fn analyze_offset(data: &[u8]) -> Result<OffsetAnalysis, AnalysisError> {
         false,
     );
     let addresses: Vec<u64> = players.iter().map(|p| p.address).collect();
+    let offset = crate::encounter::log_offset(&kept, evtc.agents()).ok();
     Ok(OffsetAnalysis {
-        offset: crate::encounter::log_offset(&kept, evtc.agents()).ok(),
-        fight_end: crate::encounter::log_end(&kept, evtc.agents(), &addresses).ok(),
+        offset,
+        fight_end: crate::encounter::log_end(&kept, evtc.agents(), &addresses, offset.unwrap_or(0))
+            .ok(),
         log_end: kept.log_end_time,
         trigger_id: kept.trigger_id,
     })

@@ -19,6 +19,12 @@ use crate::rules::{dst_is_agent, src_is_agent};
 const TIME_THRESHOLD: i64 = 150;
 /// `ParserHelper.MinimumInCombatDuration`.
 const MINIMUM_IN_COMBAT_DURATION: i64 = 2200;
+/// `RewardIDs` of the chests of the Icebrood Saga strikes.
+const ICEBROOD_REWARDS: [u64; 8] = [993, 1035, 1028, 1091, 1032, 1007, 1052, 1031];
+/// `RewardTypes.OldRaidReward2`.
+const OLD_RAID_REWARD_2: i32 = 60_685;
+/// `RewardTypes.CurrentRaidReward`.
+const CURRENT_RAID_REWARD: i32 = 22_797;
 /// `ParserHelper.ServerDelayConstant`.
 const SERVER_DELAY: i64 = 10;
 /// `TargetID.Instance`.
@@ -210,6 +216,8 @@ struct Ctx<'a> {
     kept: &'a Kept,
     table: AgentTable<'a>,
     spans: &'a HashMap<u64, (i64, i64)>,
+    /// The encounter offset that is subtracted from the time of records.
+    offset: i64,
 }
 
 impl Ctx<'_> {
@@ -742,6 +750,7 @@ pub fn log_offset(kept: &Kept, table: AgentTable<'_>) -> Result<i64, MissingKeyA
         kept,
         table,
         spans: &spans,
+        offset: 0,
     };
     match rule_for(kept.trigger_id) {
         Some(rule) => rule(&c),
@@ -855,6 +864,31 @@ fn buff_applies<'a>(
 /// time the target is known.
 fn generic_end(c: &Ctx<'_>, target: &Agent, player_addresses: &[u64]) -> End {
     let kept = c.kept;
+    // Icebrood Saga strikes: the reward of one of their chests (IcebroodSagaRaidEncounter)
+    if matches!(
+        i32::from(kept.trigger_id),
+        22_154 | 22_492 | 22_343 | 22_481 | 22_521 | 22_711
+    ) && let Some(reward) = c.first_with(|e| {
+        e.state_change == sc::REWARD
+            && ICEBROOD_REWARDS.contains(&e.dst_agent)
+            && e.time - c.offset > 0
+    }) {
+        return End {
+            success: true,
+            time: reward.time,
+        };
+    }
+    // raid wings: the weekly reward record ends the fight (RaidWingLogic.CheckSuccess)
+    if chest_position(kept.trigger_id).is_some()
+        && let Some(reward) = c.first_with(|e| {
+            e.state_change == sc::REWARD && e.value == CURRENT_RAID_REWARD && e.time - c.offset > 0
+        })
+    {
+        return End {
+            success: true,
+            time: reward.time,
+        };
+    }
     if let Some(position) = chest_position(kept.trigger_id)
         && let Some(time) = chest_gadget_time(c, position)
     {
@@ -927,7 +961,7 @@ fn minister_li_end(c: &Ctx<'_>, players: &[u64]) -> Option<End> {
 
 /// `Kanaxai.CheckSuccess`: the invulnerability she gets at the end, unless she despawns.
 fn kanaxai_end(c: &Ctx<'_>, target: &Agent) -> End {
-    let gain = buff_applies(c, skill::DETERMINED762, target).find(|e| e.time > 0);
+    let gain = buff_applies(c, skill::DETERMINED762, target).find(|e| e.time - c.offset > 0);
     if let Some(gain) = gain {
         let despawned = c.kept.events.iter().any(|e| {
             e.state_change == sc::DESPAWN
@@ -947,6 +981,170 @@ fn kanaxai_end(c: &Ctx<'_>, target: &Agent) -> End {
     }
 }
 
+/// The time the players killed a target: its last death record, but not later than the last damage
+/// of the players to it (`SetSuccessByDeath`), or `None` if it has no death record.
+fn kill_time(c: &Ctx<'_>, target: &Agent, player_addresses: &[u64]) -> Option<i64> {
+    let death = c
+        .kept
+        .events
+        .iter()
+        .rev()
+        .find(|e| e.state_change == sc::CHANGE_DEAD && c.src(e, target))?;
+    let last_damage = c.kept.events.iter().rev().find(|e| {
+        e.state_change == sc::COMBAT
+            && e.dst_agent != 0
+            && c.redirect(e.dst_agent) == target.address
+            && crate::damage::health_damage(e) > 0
+            && player_addresses.contains(&c.redirect(e.src_agent))
+    });
+    Some(last_damage.map_or(death.time, |d| d.time.min(death.time)))
+}
+
+/// `Golem.CheckSuccess`: death of the golem, or health below 2 percent.
+fn golem_end(c: &Ctx<'_>, target: &Agent) -> End {
+    let death = c
+        .kept
+        .events
+        .iter()
+        .rev()
+        .find(|e| e.state_change == sc::CHANGE_DEAD && c.src(e, target));
+    if let Some(death) = death {
+        return End {
+            success: true,
+            time: death.time,
+        };
+    }
+    let last_health = c
+        .kept
+        .events
+        .iter()
+        .rev()
+        .find(|e| e.state_change == sc::HEALTH_UPDATE && c.src(e, target));
+    if let Some(health) = last_health {
+        // the stored value is hundredths of a percent, rounded to two decimals
+        #[allow(clippy::cast_precision_loss)]
+        let percent = ((health.dst_agent as f64) / 100.0 * 100.0).round() / 100.0;
+        if percent < 2.0 {
+            let last_damage = c.kept.events.iter().rev().find(|e| {
+                e.state_change == sc::COMBAT
+                    && e.dst_agent != 0
+                    && c.redirect(e.dst_agent) == target.address
+                    && crate::damage::health_damage(e) > 0
+            });
+            return End {
+                success: true,
+                time: last_damage.map_or(target.last, |d| d.time),
+            };
+        }
+    }
+    End {
+        success: false,
+        time: target.last,
+    }
+}
+
+/// `OldLionsCourt.CheckSuccess`: all three prototypes have to be killed.
+fn old_lions_court_end(c: &Ctx<'_>, target: &Agent, players: &[u64]) -> End {
+    use species::target_id as id;
+    let cm = first_agent(c.table, c.spans, id::PROTOTYPE_VERMILION_CM).is_some();
+    let ids = if cm {
+        [
+            id::PROTOTYPE_VERMILION_CM,
+            id::PROTOTYPE_INDIGO_CM,
+            id::PROTOTYPE_ARSENITE_CM,
+        ]
+    } else {
+        [
+            id::PROTOTYPE_VERMILION,
+            id::PROTOTYPE_INDIGO,
+            id::PROTOTYPE_ARSENITE,
+        ]
+    };
+    let targets: Vec<Agent> = ids
+        .iter()
+        .flat_map(|&i| species_agents(c.table, c.spans, u32::try_from(i).unwrap_or(0)))
+        .collect();
+    let kills: Vec<i64> = targets
+        .iter()
+        .filter_map(|t| kill_time(c, t, players))
+        .collect();
+    if !targets.is_empty() && kills.len() == targets.len() {
+        return End {
+            success: true,
+            time: kills.into_iter().max().unwrap_or(target.last),
+        };
+    }
+    End {
+        success: false,
+        time: target.last,
+    }
+}
+
+/// `AiKeeperOfThePeak.CheckSuccess`: the long invulnerability Ai gets at the end.
+fn ai_end(c: &Ctx<'_>) -> Option<End> {
+    use species::target_id as id;
+    let dark = first_agent(c.table, c.spans, id::DARK_AI_KEEPER_OF_THE_PEAK);
+    let elemental = first_agent(c.table, c.spans, id::AI_KEEPER_OF_THE_PEAK);
+    let ai = dark.or(elemental)?;
+    let gain = buff_applies(c, skill::DETERMINED895, &ai)
+        .find(|e| i64::from(e.value) > i64::from(i32::MAX / 4));
+    Some(match gain {
+        Some(g) => End {
+            success: true,
+            time: g.time,
+        },
+        None => End {
+            success: false,
+            time: ai.last,
+        },
+    })
+}
+
+/// `AetherbladeHideout.CheckSuccess`: the last invulnerability of Mai Trin after Scarlet's echo
+/// appeared.
+fn aetherblade_end(c: &Ctx<'_>, target: &Agent) -> End {
+    use species::target_id as id;
+    let base = End {
+        success: false,
+        time: target.last,
+    };
+    let echo = first_agent(c.table, c.spans, id::ECHO_OF_SCARLET_BRIAR_CM)
+        .or_else(|| first_agent(c.table, c.spans, id::ECHO_OF_SCARLET_BRIAR_NM));
+    let Some(echo) = echo else {
+        return base;
+    };
+    match buff_applies(c, skill::DETERMINED895, target).last() {
+        Some(apply) if apply.time > echo.first => End {
+            success: true,
+            time: apply.time,
+        },
+        _ => End {
+            success: false,
+            time: echo.last,
+        },
+    }
+}
+
+/// `TwistedCastle.CheckSuccess`: the old raid reward; without it the fight just ends with the log.
+fn twisted_castle_end(c: &Ctx<'_>, offset: i64) -> End {
+    let end = c.kept.log_end_time;
+    let reward = c.first_with(|e| {
+        e.state_change == sc::REWARD
+            && e.value == OLD_RAID_REWARD_2
+            && e.time - offset > 0
+            && e.time < end
+    });
+    match reward {
+        Some(r) => End {
+            success: true,
+            time: r.time,
+        },
+        None => End {
+            success: false,
+            time: end,
+        },
+    }
+}
 /// The end of the fight in the time of `kept` (`LogData.SetSuccess`): a success ends 10 ms after
 /// the time the encounter logic names (at most the end of the log), a failure at the time itself.
 ///
@@ -960,13 +1158,24 @@ pub fn log_end(
     kept: &Kept,
     table: AgentTable<'_>,
     player_addresses: &[u64],
+    offset: i64,
 ) -> Result<i64, MissingKeyActors> {
     let spans = spans(kept);
     let c = Ctx {
         kept,
         table,
         spans: &spans,
+        offset,
     };
+    // the spirit race has no target to check, only the old raid reward
+    if i32::from(kept.trigger_id) == species::target_id::ETHEREAL_BARRIER_GADGET {
+        let end = twisted_castle_end(&c, offset);
+        return Ok(if end.success {
+            (end.time + SERVER_DELAY).min(kept.log_end_time)
+        } else {
+            end.time
+        });
+    }
     let target = c.agent(i32::from(kept.trigger_id))?;
     let end = match i32::from(kept.trigger_id) {
         species::target_id::ANKKA => ankka_end(&c, &target, player_addresses),
@@ -975,6 +1184,17 @@ pub fn log_end(
                 .unwrap_or_else(|| generic_end(&c, &target, player_addresses))
         }
         species::target_id::KANAXAI_SCYTHE_OF_HOUSE_AURKUS_CM => kanaxai_end(&c, &target),
+        species::target_id::PROTOTYPE_VERMILION | species::target_id::PROTOTYPE_VERMILION_CM => {
+            old_lions_court_end(&c, &target, player_addresses)
+        }
+        species::target_id::AI_KEEPER_OF_THE_PEAK => {
+            ai_end(&c).unwrap_or_else(|| generic_end(&c, &target, player_addresses))
+        }
+        species::target_id::MAI_TRIN_RAID => aetherblade_end(&c, &target),
+        species::target_id::HAUNTING_STATUE => twisted_castle_end(&c, offset),
+        16169 | 16202 | 16178 | 16198 | 16177 | 16199 | 19676 | 19645 | 16174 | 16176 => {
+            golem_end(&c, &target)
+        }
         _ => generic_end(&c, &target, player_addresses),
     };
     Ok(if end.success {
