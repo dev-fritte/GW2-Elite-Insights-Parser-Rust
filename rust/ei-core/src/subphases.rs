@@ -505,6 +505,107 @@ impl Fight<'_> {
         phases
     }
 
+    /// The times (relative to the start of the fight) of the buff events of a skill, in order.
+    fn buff_times(&self, buff: i64, removal_only: bool) -> Vec<i64> {
+        self.kept
+            .events
+            .iter()
+            .filter(|e| {
+                i64::from(e.skill_id) == buff
+                    && match e.state_change {
+                        sc::BUFF_REMOVE_ALL | sc::BUFF_REMOVE_SINGLE => true,
+                        sc::BUFF_APPLY | sc::BUFF_INITIAL => !removal_only,
+                        _ => false,
+                    }
+            })
+            .map(|e| e.time - self.offset)
+            .collect()
+    }
+
+    /// Matthias: ice, fire, storm and abomination phase, each starting with a buff of the next
+    /// element.
+    fn matthias(&self, main: usize) -> Vec<SubPhase> {
+        let new = |start: i64, end: i64| SubPhase {
+            start,
+            end,
+            targets: Vec::new(),
+        };
+        let end = self.duration;
+        let first = |buff: i64| self.buff_times(buff, false).first().copied();
+        let mut phases = Vec::new();
+        if let Some(heat_wave) = first(skill::HEAT_WAVE_MATTHIAS) {
+            phases.push(new(0, heat_wave));
+            if let Some(downpour) = first(skill::DOWNPOUR_MATTHIAS) {
+                phases.push(new(heat_wave, downpour));
+                if let Some(unstable) = first(skill::UNSTABLE) {
+                    phases.push(new(downpour, unstable));
+                    let target = &self.targets[main];
+                    let removal = self
+                        .kept
+                        .events
+                        .iter()
+                        .filter(|e| {
+                            i64::from(e.skill_id) == skill::INVULNERABILITY757
+                                && matches!(
+                                    e.state_change,
+                                    sc::BUFF_REMOVE_ALL | sc::BUFF_REMOVE_SINGLE
+                                )
+                                && e.src_agent != 0
+                                && target.addresses.contains(&self.redirect(e.src_agent))
+                        })
+                        .map(|e| e.time - self.offset)
+                        .find(|&t| t >= unstable && t <= unstable + 10_000);
+                    if let Some(removal) = removal {
+                        phases.push(new(removal, end));
+                    }
+                } else {
+                    phases.push(new(downpour, end));
+                }
+            } else {
+                phases.push(new(heat_wave, end));
+            }
+        }
+        for phase in &mut phases {
+            self.add_target(phase, main);
+            self.add_targets_of(phase, &[species::MATTHIAS_SACRIFICE_CRYSTAL]);
+        }
+        phases
+    }
+
+    /// Whisper of Jormag: the times before the doppelgangers (teleports at 75% and 25%) and the
+    /// final phase.
+    fn whisper_of_jormag(&self, main: usize) -> Vec<SubPhase> {
+        let mut out = self.buff_times(skill::WHISPER_TELEPORT_OUT, true);
+        let mut back = self.buff_times(skill::WHISPER_TELEPORT_BACK, true);
+        let new = |start: i64, end: i64| SubPhase {
+            start,
+            end,
+            targets: Vec::new(),
+        };
+        let mut phases = Vec::new();
+        if let Some(&end) = out.iter().min() {
+            phases.push(new(0, end));
+            out.retain(|&t| t > end + 1000);
+        }
+        if let Some(&start) = back.iter().min() {
+            let end = if let Some(&end) = out.iter().min() {
+                back.retain(|&t| t > end);
+                end
+            } else {
+                back.clear();
+                self.duration
+            };
+            phases.push(new(start, end));
+            if let Some(&start) = back.iter().min() {
+                phases.push(new(start, self.duration));
+            }
+        }
+        for phase in &mut phases {
+            self.add_target(phase, main);
+        }
+        phases
+    }
+
     /// Soulless Horror: the time before each howling death, the howling death and the rest.
     fn soulless_horror(&self, main: usize) -> Vec<SubPhase> {
         let end = self.duration;
@@ -565,7 +666,8 @@ impl Fight<'_> {
                                     | sc::BUFF_REMOVE_ALL
                                     | sc::BUFF_REMOVE_SINGLE
                             )
-                            && (e.dst_agent != 0 && t.addresses.contains(&self.redirect(e.dst_agent))
+                            && (e.dst_agent != 0
+                                && t.addresses.contains(&self.redirect(e.dst_agent))
                                 || e.src_agent != 0
                                     && t.addresses.contains(&self.redirect(e.src_agent)))
                     })
@@ -755,6 +857,8 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::MATTHIAS => fight.matthias(main),
+        species::WHISPER_OF_JORMAG => fight.whisper_of_jormag(main),
         species::SOULLESS_HORROR => fight.soulless_horror(main),
         species::ARTSARIIV => fight.alternating(
             main,
