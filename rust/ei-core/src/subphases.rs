@@ -505,6 +505,39 @@ impl Fight<'_> {
         phases
     }
 
+    /// Soulless Horror: the time before each howling death, the howling death and the rest.
+    fn soulless_horror(&self, main: usize) -> Vec<SubPhase> {
+        let end = self.duration;
+        let mut phases = Vec::new();
+        let mut start = 0;
+        for (cast_start, cast_end) in self.animated_casts(&self.targets[main], skill::HOWLING_DEATH)
+        {
+            phases.push(SubPhase {
+                start,
+                end: cast_start.min(end),
+                targets: Vec::new(),
+            });
+            phases.push(SubPhase {
+                start: cast_start.min(end),
+                end: cast_end.min(end),
+                targets: Vec::new(),
+            });
+            start = cast_end;
+        }
+        if end - start > PHASE_TIME_LIMIT {
+            phases.push(SubPhase {
+                start,
+                end,
+                targets: Vec::new(),
+            });
+        }
+        for phase in &mut phases {
+            self.add_target(phase, main);
+            self.add_targets_of(phase, &[species::TORMENTED_DEAD]);
+        }
+        phases
+    }
+
     /// Cerus: phases alternate with the splits of the embodiments, after the last phase the
     /// enraged smash starts a final phase.
     fn cerus(&self, main: usize) -> Vec<SubPhase> {
@@ -722,6 +755,13 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::SOULLESS_HORROR => fight.soulless_horror(main),
+        species::ARTSARIIV => fight.alternating(
+            main,
+            skill::DETERMINED762,
+            &[species::CLONE_ARTSARIIV],
+            true,
+        ),
         species::URA => fight.ura(main)?,
         species::DECIMA => fight.decima(main),
         species::MURSAAT_OVERSEER => fight.by_health(main, &[75.0, 50.0, 25.0, 0.0], (0, duration)),
