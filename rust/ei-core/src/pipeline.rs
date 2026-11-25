@@ -451,6 +451,15 @@ pub fn analyze_offset(data: &[u8]) -> Result<OffsetAnalysis, AnalysisError> {
             &targets,
             offset.unwrap_or(0),
             duration,
+            &crate::subphases::Extras {
+                lamps: crate::encounter::qadim_lamps(&kept, evtc.agents(), offset.unwrap_or(0)),
+                pyre_starts: crate::encounter::species_first_times(
+                    &kept,
+                    evtc.agents(),
+                    offset.unwrap_or(0),
+                    21_050,
+                ),
+            },
         ),
         breakbar_phases: crate::phases::breakbar_phases(
             &kept,

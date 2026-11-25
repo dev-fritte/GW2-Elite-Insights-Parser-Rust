@@ -606,6 +606,47 @@ impl Fight<'_> {
         phases
     }
 
+    /// Qadim: phases alternate with his invulnerability; while he is invulnerable the other
+    /// targets (hydra, apocalypse bringer, wyverns) fight, afterwards the pyres burn.
+    fn qadim(&self, main: usize, pyre_starts: &[i64]) -> Vec<SubPhase> {
+        let mut phases = self.by_invuln(
+            &[skill::QADIM_INVULNERABLE],
+            main,
+            true,
+            false,
+            (0, self.duration),
+        );
+        for (i, phase) in phases.iter_mut().enumerate() {
+            if (i + 1) % 2 == 0 {
+                let latest = pyre_starts
+                    .iter()
+                    .copied()
+                    .filter(|t| (phase.start..=phase.end).contains(t))
+                    .max();
+                if let Some(latest) = latest
+                    && latest > phase.start
+                {
+                    phase.start = latest;
+                }
+                self.add_target(phase, main);
+            } else {
+                self.add_targets_of(
+                    phase,
+                    &[
+                        species::WYVERN_MATRIARCH,
+                        species::WYVERN_PATRIARCH,
+                        species::ANCIENT_INVOKED_HYDRA,
+                        species::APOCALYPSE_BRINGER,
+                        species::QADIM_LAMP,
+                    ],
+                );
+                self.fit(phase);
+            }
+        }
+        phases.retain(|p| p.start < p.end);
+        phases
+    }
+
     /// Eparch (challenge mode): phases alternate with the splits of the incarnations.
     fn eparch(&self, main: usize) -> Vec<SubPhase> {
         let split = [
@@ -932,6 +973,15 @@ impl Fight<'_> {
     }
 }
 
+/// What the phases need to know about agents that are no targets.
+#[derive(Debug, Clone, Default)]
+pub struct Extras {
+    /// The first times of the pyre guardians of Qadim.
+    pub pyre_starts: Vec<i64>,
+    /// The lamps of Qadim (volatile species, so no regular targets).
+    pub lamps: Vec<Target>,
+}
+
 /// The sub phases of an encounter, or `None` if its phases are not ported. Times are relative to
 /// the start of the fight, which lasts `duration`.
 #[must_use]
@@ -941,7 +991,10 @@ pub fn encounter_phases(
     targets: &[Target],
     offset: i64,
     duration: i64,
+    extras: &Extras,
 ) -> Option<Vec<SubPhase>> {
+    let all_targets: Vec<Target> = targets.iter().chain(&extras.lamps).cloned().collect();
+    let targets = &all_targets[..];
     let fight = Fight {
         kept,
         targets,
@@ -1030,6 +1083,7 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::QADIM => fight.qadim(main, &extras.pyre_starts),
         species::EPARCH_LONELY_TOWER => fight.eparch(main),
         species::BERG => fight.bandit_trio(),
         species::WHISPERING_SHADOW => fight.whispering_shadow(main),

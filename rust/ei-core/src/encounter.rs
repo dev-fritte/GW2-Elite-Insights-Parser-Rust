@@ -1583,14 +1583,105 @@ fn ignored_agent(kept: &Kept, address: u64, species: i32) -> bool {
                 && e.dst_agent != 0
                 && redirect(e.dst_agent) == address
         }),
+        (t, s) if t == id::QADIM && s == id::PYRE_GUARDIAN => qadim_pyre_is_known(kept, address),
         _ => false,
     }
+}
+
+/// `Qadim.FindPyres`: a pyre guardian at one of the known positions gets its own species, so it
+/// is no longer one of the plain pyre guardians.
+fn qadim_pyre_is_known(kept: &Kept, address: u64) -> bool {
+    const POSITIONS: [(f32, f32); 8] = [
+        (-8947.0, 14728.0),
+        (-10834.0, 12477.0),
+        (-4356.0, 12076.0),
+        (-5889.0, 14723.0),
+        (-7851.0, 13550.0),
+        (-8951.0, 9429.0),
+        (-5716.0, 9325.0),
+        (-7846.0, 10612.0),
+    ];
+    /// `ParserHelper.InchDistanceThresholdSquared`.
+    const THRESHOLD_SQUARED: f32 = 1.414_213_6 * 1.414_213_6;
+    kept.events
+        .iter()
+        .find(|e| {
+            e.state_change == sc::POSITION
+                && e.src_agent != 0
+                && *kept
+                    .agent_redirection
+                    .get(&e.src_agent)
+                    .unwrap_or(&e.src_agent)
+                    == address
+        })
+        .is_some_and(|e| {
+            let x = f32::from_bits((e.dst_agent & 0xFFFF_FFFF) as u32);
+            let y = f32::from_bits((e.dst_agent >> 32) as u32);
+            POSITIONS
+                .iter()
+                .any(|&(px, py)| (px - x).powi(2) + (py - y).powi(2) < THRESHOLD_SQUARED)
+        })
 }
 
 /// The flux anomalies of Skorvald.
 const FLUX_ANOMALIES: [i32; 8] = [
     17_578, 17_929, 17_695, 17_651, 17_599, 17_770, 17_851, 17_673,
 ];
+
+/// The lamps of Qadim (`Qadim.FindLamps`): the gadgets that carry the lamp marker, as targets of the
+/// volatile species `QadimLamp`.
+#[must_use]
+pub fn qadim_lamps(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Target> {
+    let Some(marker) = kept.events.iter().find(|e| {
+        e.state_change == sc::ID_TO_GUID
+            && record_guid(e) == ei_data::marker_guids::QADIM_LAMP_MARKER
+    }) else {
+        return Vec::new();
+    };
+    let spans = spans(kept);
+    let mut addresses: Vec<u64> = Vec::new();
+    for e in &kept.events {
+        if e.state_change == sc::MARKER
+            && i64::from(e.value) == i64::from(marker.skill_id)
+            && e.src_agent != 0
+        {
+            let address = *kept
+                .agent_redirection
+                .get(&e.src_agent)
+                .unwrap_or(&e.src_agent);
+            if !addresses.contains(&address) {
+                addresses.push(address);
+            }
+        }
+    }
+    addresses
+        .into_iter()
+        .filter(|a| {
+            table
+                .iter()
+                .any(|x| x.address() == *a && agent_kind(x) == AgentKind::Gadget)
+        })
+        .filter_map(|a| {
+            let &(first, last) = spans.get(&a)?;
+            Some(Target {
+                address: a,
+                addresses: vec![a],
+                species: species::target_id::QADIM_LAMP,
+                first: first - offset,
+                last: last - offset,
+            })
+        })
+        .collect()
+}
+
+/// The first times (with the offset applied) of the agents of a species, ordered by first appearance.
+#[must_use]
+pub fn species_first_times(kept: &Kept, table: AgentTable<'_>, offset: i64, id: u32) -> Vec<i64> {
+    species_agents(table, &spans(kept), id)
+        .into_iter()
+        .map(|a| a.first - offset)
+        .collect()
+}
 
 /// The targets of the encounter: the agents of the species its logic lists, ordered by first
 /// appearance and then by the sort keys of the logic (`LogLogic.ComputeLogTargets`).
