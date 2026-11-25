@@ -208,7 +208,8 @@ impl Fight<'_> {
         (start, end): (i64, i64),
         (filter_small, gap): (bool, i64),
     ) -> Vec<SubPhase> {
-        let sequence = self.invuln_sequence(ids, &self.targets[target_index], begin_with_start, gap);
+        let sequence =
+            self.invuln_sequence(ids, &self.targets[target_index], begin_with_start, gap);
         let mut last = start;
         let mut phases: Vec<SubPhase> = Vec::new();
         let new = |s: i64, e: i64| SubPhase {
@@ -1495,6 +1496,35 @@ impl Fight<'_> {
         phases
     }
 
+    /// Kanaxai (challenge mode): the world cleaver phases and the phases between them; the
+    /// phases are those between the determined to destroy buffs. A log without health updates
+    /// has none.
+    fn kanaxai(&self, main: usize) -> Vec<SubPhase> {
+        let target = &self.targets[main];
+        let mut phases = self.by_invuln(
+            &[skill::DETERMINED_TO_DESTROY],
+            main,
+            true,
+            true,
+            (0, self.duration),
+        );
+        let cleaver_starts = self.buff_times_on(target, skill::DETERMINED_TO_DESTROY, true);
+        let updates = self.health_updates(target);
+        for phase in &phases {
+            if cleaver_starts.contains(&phase.start) {
+                let middle = i64::midpoint(phase.start, phase.end);
+                let percent = updates.iter().rfind(|u| u.0 <= middle).map_or(0.0, |u| u.1);
+                if percent <= 25.0 {
+                    return Vec::new();
+                }
+            }
+        }
+        for phase in &mut phases {
+            self.add_target(phase, main);
+        }
+        phases
+    }
+
     /// Statue of Darkness: from the loss of the first invulnerability each eye has a phase
     /// whenever it is not determined.
     fn statue_of_darkness(&self) -> Vec<SubPhase> {
@@ -1963,6 +1993,7 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::KANAXAI_SCYTHE_OF_HOUSE_AURKUS_CM => fight.kanaxai(main),
         species::VLOXX => fight.nexus(main),
         species::KEEP_CONSTRUCT => fight.keep_construct(main),
         species::AI_KEEPER_OF_THE_PEAK => fight.elemental_ai(main),
