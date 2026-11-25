@@ -970,6 +970,110 @@ impl Fight<'_> {
         phases
     }
 
+    /// Super Kodan Brothers: phases between the invulnerabilities, the merged voice and claw,
+    /// the positions between the teleports and the enrage.
+    fn kodan(&self, claw: usize) -> Vec<SubPhase> {
+        let Some(voice) = self
+            .targets
+            .iter()
+            .position(|t| t.species == species::CLAW_OF_THE_FALLEN)
+        else {
+            return Vec::new();
+        };
+        let end = self.duration;
+        let new = |start: i64, end: i64| SubPhase {
+            start,
+            end,
+            targets: Vec::new(),
+        };
+        let both = |phase: &mut SubPhase| {
+            self.add_target(phase, claw);
+            self.add_target(phase, voice);
+        };
+        let mut unmerged = self.by_invuln(&[skill::DETERMINED762], claw, false, true, (0, end));
+        for phase in &mut unmerged {
+            both(phase);
+        }
+        let mut phases = unmerged.clone();
+        // the merged voice and claw
+        let merged: Vec<usize> = self
+            .targets
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.species == species::VOICE_AND_CLAW)
+            .map(|(i, _)| i)
+            .collect();
+        for &index in &merged {
+            let target = &self.targets[index];
+            let start = self
+                .of_target(target, &[sc::ENTER_COMBAT])
+                .map(|e| e.time - self.offset)
+                .next()
+                .unwrap_or(target.first);
+            let stop = unmerged
+                .iter()
+                .find(|p| p.start > start)
+                .map_or(end.min(target.last), |p| p.start - 1);
+            let mut phase = new(start, stop);
+            self.add_target(&mut phase, index);
+            phases.push(phase);
+        }
+        // the positions between the teleports of the claw
+        let mut pre_start = 0;
+        for (cast_start, cast_end) in
+            self.animated_casts(&self.targets[voice], skill::KODAN_TELEPORT)
+        {
+            let mut pre_end = cast_start.min(end);
+            let next_merged = merged
+                .iter()
+                .map(|&i| &self.targets[i])
+                .find(|t| t.first >= pre_start);
+            if let Some(merged) = next_merged {
+                let old_end = pre_end;
+                pre_end = pre_end.min(merged.first);
+                if old_end != pre_end
+                    && let Some(next) = unmerged.iter().find(|p| p.start > merged.last)
+                {
+                    let mut phase = new(next.start + 1, old_end);
+                    both(&mut phase);
+                    phases.push(phase);
+                }
+            }
+            if pre_end - pre_start > 2000 {
+                let mut phase = new(pre_start, pre_end);
+                both(&mut phase);
+                phases.push(phase);
+            }
+            pre_start = cast_end;
+        }
+        // the enrage
+        let enrage = self.kept.events.iter().find(|e| {
+            e.state_change == sc::BUFF_APPLY && i64::from(e.skill_id) == skill::ENRAGED_VC
+        });
+        let enrage_time = enrage.map(|e| e.time - self.offset);
+        if let Some(e) = enrage {
+            let mut phase = new(e.time - self.offset, end);
+            let on_claw = e.dst_agent != 0
+                && self.targets[claw]
+                    .addresses
+                    .contains(&self.redirect(e.dst_agent));
+            self.add_target(&mut phase, if on_claw { claw } else { voice });
+            phases.push(phase);
+        }
+        // the final position that has no teleport after it
+        let final_start = unmerged
+            .iter()
+            .find(|p| p.start > pre_start)
+            .map_or(pre_start, |p| p.start);
+        let final_end = enrage_time.unwrap_or(end);
+        if final_end - final_start > 2000 {
+            let mut phase = new(final_start, final_end);
+            both(&mut phase);
+            phases.push(phase);
+        }
+        phases
+    }
+
     /// Statue of Darkness: from the loss of the first invulnerability each eye has a phase
     /// whenever it is not determined.
     fn statue_of_darkness(&self) -> Vec<SubPhase> {
@@ -1436,6 +1540,7 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::VOICE_OF_THE_FALLEN => fight.kodan(main),
         species::ADINA => fight.adina(main),
         species::EYE_OF_FATE => fight.statue_of_darkness(),
         species::FRAENIR_OF_JORMAG => fight.fraenir(main),
