@@ -12,6 +12,9 @@ if (-not $Out) { $Out = Join-Path $root 'rust\ei-data\src\generated\mechanics.rs
 $kinds = @{
     'PlayerDstHealthDamageHitMechanic' = 'PlayerDstHit'
     'PlayerDstBuffApplyMechanic' = 'PlayerDstBuffApply'
+    'EnemyCastStartMechanic' = 'EnemyCastStart'
+    'EnemyCastEndMechanic' = 'EnemyCastEnd'
+    'EnemyDstBuffApplyMechanic' = 'EnemyDstBuffApply'
 }
 $rows = Import-Csv -Delimiter "`t" -LiteralPath $Tsv -Encoding UTF8
 $sb = New-Object System.Text.StringBuilder
@@ -26,6 +29,12 @@ L '    /// A hit (`HasHit`) of one of the skills on a player (`PlayerDstHealthDa
 L '    PlayerDstHit,'
 L '    /// One of the buffs applied to a player (`PlayerDstBuffApplyMechanic`).'
 L '    PlayerDstBuffApply,'
+L '    /// The start of an animated cast of one of the skills by an enemy (`EnemyCastStartMechanic`).'
+L '    EnemyCastStart,'
+L '    /// The end of an animated cast of one of the skills by an enemy (`EnemyCastEndMechanic`).'
+L '    EnemyCastEnd,'
+L '    /// One of the buffs applied to an enemy (`EnemyDstBuffApplyMechanic`).'
+L '    EnemyDstBuffApply,'
 L '}'
 L ''
 L '/// One mechanic of an encounter logic.'

@@ -549,6 +549,35 @@ fn compare_graphs(
 }
 
 /// Compares the mechanics every encounter has: for each of them the sorted times and players.
+/// Counts a mechanic of enemies whose times agree with the reference but whose names do not.
+fn note_enemy_names(
+    stats: &mut BTreeMap<&'static str, DamageStats>,
+    label: &str,
+    name: &str,
+    ours: &[(i64, String)],
+    expected: &[(i64, String)],
+) {
+    let times = |v: &[(i64, String)]| v.iter().map(|x| x.0).collect::<Vec<_>>();
+    if ours == expected || times(ours) != times(expected) {
+        return;
+    }
+    let n = stats.entry("mechanics (enemy names)").or_default();
+    n.compared += 1;
+    n.mismatches += 1;
+    if n.examples.len() < 20 {
+        let names = |v: &[(i64, String)]| {
+            v.iter()
+                .map(|x| x.1.clone())
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        n.examples.push(format!(
+            "{label} {name}: rust {:?} reference {:?}",
+            names(ours),
+            names(expected)
+        ));
+    }
+}
+
 fn compare_mechanics(
     analysis: &ei_core::pipeline::DamageAnalysis,
     reference: &Value,
@@ -607,14 +636,33 @@ fn compare_mechanics(
             .mechanics
             .iter()
             .filter(|m| m.name == name)
-            .flat_map(|m| m.events.iter())
-            .map(|&(time, player)| (time, analysis.mechanic_players[player].character.clone()))
+            .flat_map(|m| {
+                m.events
+                    .iter()
+                    .map(|&(time, player)| {
+                        (time, analysis.mechanic_players[player].character.clone())
+                    })
+                    .chain(m.enemies.iter().cloned())
+            })
             .collect();
         expected.sort();
         ours.sort();
+        // enemy mechanics: C# renames enemies in single logics (not ported), so the times decide
+        // and the names are counted on their own
+        let enemy = analysis
+            .mechanics
+            .iter()
+            .any(|m| m.name == name && !m.enemies.is_empty());
+        let (key, same) = if enemy {
+            note_enemy_names(stats, label, name, &ours, &expected);
+            let times = |v: &[(i64, String)]| v.iter().map(|x| x.0).collect::<Vec<_>>();
+            ("mechanics (enemy)", times(&ours) == times(&expected))
+        } else {
+            (key, ours == expected)
+        };
         let s = stats.entry(key).or_default();
         s.compared += 1;
-        if ours != expected {
+        if !same {
             s.mismatches += 1;
             if s.examples.len() < 50 {
                 s.examples.push(format!(

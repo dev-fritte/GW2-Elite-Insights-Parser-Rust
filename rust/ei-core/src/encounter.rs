@@ -1796,6 +1796,22 @@ pub fn adina_hands(kept: &Kept, offset: i64) -> Vec<Target> {
         .collect()
 }
 
+/// The addresses of the agents of the trash mob species of the logic (`LogLogic.TrashMobs`).
+#[must_use]
+pub(crate) fn trash_addresses(kept: &Kept, table: AgentTable<'_>) -> Vec<u64> {
+    let Some(logic) = ei_data::targets::logic(i32::from(kept.trigger_id)) else {
+        return Vec::new();
+    };
+    let spans = spans(kept);
+    logic
+        .trash
+        .iter()
+        .filter_map(|&id| u32::try_from(id).ok())
+        .flat_map(|id| species_agents(table, &spans, id))
+        .map(|a| a.address)
+        .collect()
+}
+
 /// The agents of some species as (first, last, end) with the offset applied, ordered by first
 /// appearance; the end is the last death of the agent if it has one, else its last time.
 #[must_use]

@@ -341,7 +341,8 @@ pub fn analyze_damage(
     mechanics.extend(crate::mechanics::encounter_mechanics(
         &kept,
         &players,
-        i32::from(header.trigger_id()),
+        evtc.agents(),
+        &targets,
         timing.offset,
         timing.duration,
     ));
