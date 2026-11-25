@@ -1379,6 +1379,27 @@ fn statue_of_darkness_end(c: &Ctx<'_>, fate: &Agent, player_addresses: &[u64]) -
     }
 }
 
+/// `SingleActor.GetHealth` of the agent at `address`.
+#[must_use]
+pub fn target_health(kept: &Kept, table: AgentTable<'_>, address: u64) -> Option<u64> {
+    let spans = spans(kept);
+    let c = Ctx {
+        kept,
+        table,
+        spans: &spans,
+        offset: 0,
+    };
+    let &(first, last) = spans.get(&address)?;
+    actor_health(
+        &c,
+        &Agent {
+            address,
+            first,
+            last,
+        },
+    )
+}
+
 /// `SingleActor.GetHealth`: the maximum health the agent has around the middle of its time (or
 /// shortly before its last hit).
 fn actor_health(c: &Ctx<'_>, agent: &Agent) -> Option<u64> {

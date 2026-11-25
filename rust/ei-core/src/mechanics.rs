@@ -600,7 +600,7 @@ pub fn encounter_mechanics(
     };
     let mut stable: HashMap<usize, Vec<(i64, i64)>> = HashMap::new();
     let achievements = achievement_events(kept, players, &spans, &active, fight, trigger_id, &defs);
-    let enemy_names = enemy_names(kept, table, targets);
+    let enemy_names = enemy_names(kept, table, targets, offset);
     let casts = if defs
         .iter()
         .any(|m| matches!(m.kind, Kind::EnemyCastStart | Kind::EnemyCastEnd))
@@ -1148,6 +1148,7 @@ fn enemy_names(
     kept: &Kept,
     table: evtc_ingest::AgentTable<'_>,
     targets: &[crate::encounter::Target],
+    offset: i64,
 ) -> HashMap<u64, String> {
     let name_of = |address: u64| -> String {
         table
@@ -1156,29 +1157,177 @@ fn enemy_names(
             .map(|a| a.name().split('\0').next().unwrap_or("").to_owned())
             .unwrap_or_default()
     };
+    let rank = rank_prefixes(kept);
     let mut names = HashMap::new();
+    // the embodiments that appear together with Cerus become permanent ones (another species)
+    let cerus = targets
+        .iter()
+        .find(|t| t.species == ei_data::species_ids::target_id::CERUS);
+    let permanent = |t: &crate::encounter::Target| {
+        use ei_data::species_ids::target_id as id;
+        matches!(
+            t.species,
+            id::EMBODIMENT_OF_DESPAIR
+                | id::EMBODIMENT_OF_ENVY
+                | id::EMBODIMENT_OF_GLUTTONY
+                | id::EMBODIMENT_OF_MALICE
+                | id::EMBODIMENT_OF_RAGE
+                | id::EMBODIMENT_OF_REGRET
+        ) && cerus.is_some_and(|c| (c.first - t.first).abs() < 50)
+    };
+    let species_of = |t: &crate::encounter::Target| {
+        if permanent(t) { -t.species } else { t.species }
+    };
     let mut counts: HashMap<i32, usize> = HashMap::new();
     for t in targets {
-        *counts.entry(t.species).or_default() += 1;
+        *counts.entry(species_of(t)).or_default() += 1;
     }
     let mut seen: HashMap<i32, usize> = HashMap::new();
     for t in targets {
         let base = name_of(t.address);
-        let name = if counts[&t.species] > 1 {
-            let n = seen.entry(t.species).or_default();
+        let name = if counts[&species_of(t)] > 1 {
+            let n = seen.entry(species_of(t)).or_default();
             *n += 1;
             format!("{base} {n}")
         } else {
             base
         };
+        let name = if permanent(t) {
+            format!("{name} (Permanent)")
+        } else {
+            renamed(kept, table, t, offset, &name).unwrap_or(name)
+        };
+        let name = format!("{}{name}", rank.get(&t.address).copied().unwrap_or(""));
         for &a in &t.addresses {
             names.insert(a, name.clone());
         }
     }
     for address in crate::encounter::trash_addresses(kept, table) {
-        names.entry(address).or_insert_with(|| name_of(address));
+        names.entry(address).or_insert_with(|| {
+            format!(
+                "{}{}",
+                rank.get(&address).copied().unwrap_or(""),
+                name_of(address)
+            )
+        });
     }
     names
+}
+
+/// `ArcDPSBuilds.AgentInfoAdded`: arcdps writes the rank flags of NPCs from this build on.
+const AGENT_INFO_ADDED: i32 = 20_260_929;
+
+/// The names the encounter logics give targets (`OverrideName`) that follow from the log: the
+/// empowered embodiments of Cerus, the heroes of Deimos's Sauls, Greer and Ura by their mode.
+/// Not ported: the dark Ai, the Sunqua Peak instance and the targets of the other logics.
+fn renamed(
+    kept: &Kept,
+    table: evtc_ingest::AgentTable<'_>,
+    target: &crate::encounter::Target,
+    offset: i64,
+    name: &str,
+) -> Option<String> {
+    use ei_data::species_ids::target_id as id;
+    let empowered = |buff: i64| {
+        kept.events.iter().any(|e| {
+            matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+                && i64::from(e.skill_id) == buff
+                && target.addresses.contains(
+                    kept.agent_redirection
+                        .get(&e.dst_agent)
+                        .unwrap_or(&e.dst_agent),
+                )
+                && (e.time - offset - target.first).abs() < SERVER_DELAY
+        })
+    };
+    let embodiment = match target.species {
+        id::EMBODIMENT_OF_DESPAIR => skill::EMPOWERED_DESPAIR_EMBODIMENT,
+        id::EMBODIMENT_OF_ENVY => skill::EMPOWERED_ENVY_EMBODIMENT,
+        id::EMBODIMENT_OF_GLUTTONY => skill::EMPOWERED_GLUTTONY_EMBODIMENT,
+        id::EMBODIMENT_OF_MALICE => skill::EMPOWERED_MALICE_EMBODIMENT,
+        id::EMBODIMENT_OF_RAGE => skill::EMPOWERED_RAGE_EMBODIMENT,
+        id::EMBODIMENT_OF_REGRET => skill::EMPOWERED_REGRET_EMBODIMENT,
+        _ => 0,
+    };
+    match target.species {
+        _ if embodiment != 0 => empowered(embodiment).then(|| format!("Empowered {name}")),
+        // before arcdps knew the ranks Ura's logic names its adds itself
+        id::ELITE_FUMAROLLER if kept.version.build < AGENT_INFO_ADDED => {
+            Some(format!("Elite {name}"))
+        }
+        id::CHAMPION_FUMAROLLER if kept.version.build < AGENT_INFO_ADDED => {
+            Some(format!("Champion {name}"))
+        }
+        id::LEGENDARY_VENTSHOT if kept.version.build < AGENT_INFO_ADDED => {
+            Some(format!("Legendary {name}"))
+        }
+        // the elemental Ai of the Ai logic (the dark Ai is no agent; the Sunqua Peak instance names its own)
+        id::AI_KEEPER_OF_THE_PEAK if i32::from(kept.trigger_id) == id::AI_KEEPER_OF_THE_PEAK => {
+            Some("Elemental Ai, Keeper of the Peak".to_owned())
+        }
+        id::THIEF => Some("Thief".to_owned()),
+        id::DRUNKARD => Some("Drunkard".to_owned()),
+        id::GAMBLER => Some("Gambler".to_owned()),
+        id::GREER if table.iter().any(|a| a.profession() == id::EREG as u32) => {
+            Some("Godspoil Greer".to_owned())
+        }
+        id::URA => Some(
+            if crate::encounter::target_health(kept, table, target.address)
+                .is_some_and(|hp| hp > 70_000_000)
+            {
+                "Godscream Ura"
+            } else {
+                "Ura, the Steamshrieker"
+            }
+            .to_owned(),
+        ),
+        _ => None,
+    }
+}
+
+/// The prefix `GetNPCRankPrefix` puts before the name of an NPC, by address: from the first agent
+/// info record of the agent (arcdps from 2026-09-29 on).
+fn rank_prefixes(kept: &Kept) -> HashMap<u64, &'static str> {
+    const CHAMPION: u32 = 1 << 1;
+    const ELITE: u32 = 1 << 5;
+    const LEGENDARY: u32 = 1 << 11;
+    const NO_DECORATE_NAME: u32 = 1 << 19;
+    const VETERAN: u32 = 1 << 29;
+    let mut out = HashMap::new();
+    if kept.version.build < AGENT_INFO_ADDED {
+        return out;
+    }
+    let mut seen = std::collections::HashSet::new();
+    for e in kept
+        .events
+        .iter()
+        .filter(|e| e.state_change == sc::AGENT_INFO)
+    {
+        let address = *kept
+            .agent_redirection
+            .get(&e.src_agent)
+            .unwrap_or(&e.src_agent);
+        if !seen.insert(address) {
+            continue;
+        }
+        let flags = e.buff_dmg.cast_unsigned();
+        if flags == 0 || flags & NO_DECORATE_NAME != 0 {
+            continue;
+        }
+        let prefix = if flags & VETERAN != 0 {
+            "Veteran "
+        } else if flags & ELITE != 0 {
+            "Elite "
+        } else if flags & CHAMPION != 0 {
+            "Champion "
+        } else if flags & LEGENDARY != 0 {
+            "Legendary "
+        } else {
+            continue;
+        };
+        out.insert(address, prefix);
+    }
+    out
 }
 
 /// An animated cast by an enemy (`AnimatedCastEvent`).
