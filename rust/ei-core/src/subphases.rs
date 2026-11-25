@@ -1142,10 +1142,11 @@ impl Fight<'_> {
             }
             _ => {}
         }
-        if !first_at_zero && phases.first().is_some_and(|p| p.0 == 0) {
-            if let Some(hit) = fallback(0) {
-                phases[0].0 = hit;
-            }
+        if !first_at_zero
+            && phases.first().is_some_and(|p| p.0 == 0)
+            && let Some(hit) = fallback(0)
+        {
+            phases[0].0 = hit;
         }
         phases
             .into_iter()
