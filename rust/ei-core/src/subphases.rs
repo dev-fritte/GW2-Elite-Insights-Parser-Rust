@@ -269,7 +269,7 @@ impl Fight<'_> {
     fn animated_casts_of(&self, target: &Target, skill_ids: &[i64]) -> Vec<(i64, i64, i64)> {
         let events: Vec<&CombatRecord> = self
             .of_target(target, &[sc::ANIMATION_START, sc::ANIMATION_STOP])
-            .filter(|e| skill_ids.contains(&i64::from(e.skill_id)))
+            .filter(|e| skill_ids.is_empty() || skill_ids.contains(&i64::from(e.skill_id)))
             .collect();
         let mut casts = Vec::new();
         for (i, e) in events.iter().enumerate() {
@@ -606,6 +606,126 @@ impl Fight<'_> {
         phases
     }
 
+    /// Eparch (challenge mode): phases alternate with the splits of the incarnations.
+    fn eparch(&self, main: usize) -> Vec<SubPhase> {
+        let split = [
+            species::INCARNATION_OF_CRUELTY,
+            species::INCARNATION_OF_JUDGEMENT,
+            species::KRYPTIS_RIFT,
+        ];
+        // without the incarnations it is the normal mode, which has no phases
+        if !self.targets.iter().any(|t| {
+            t.species == species::INCARNATION_OF_CRUELTY
+                || t.species == species::INCARNATION_OF_JUDGEMENT
+        }) {
+            return Vec::new();
+        }
+        let mut phases = self.by_invuln(
+            &[skill::DETERMINED762],
+            main,
+            true,
+            true,
+            (0, self.duration),
+        );
+        for (i, phase) in phases.iter_mut().enumerate() {
+            if (i + 1) % 2 == 0 {
+                self.add_targets_of(phase, &split);
+            } else {
+                self.add_target(phase, main);
+            }
+        }
+        phases
+    }
+
+    /// Bandit trio: one phase per bandit, from the last time it enters combat to its death.
+    fn bandit_trio(&self) -> Vec<SubPhase> {
+        let mut phases = Vec::new();
+        for id in [species::BERG, species::ZANE, species::NARELLA] {
+            let Some(index) = self.targets.iter().position(|t| t.species == id) else {
+                continue;
+            };
+            let target = &self.targets[index];
+            let Some(start) = self
+                .of_target(target, &[sc::ENTER_COMBAT])
+                .map(|e| e.time - self.offset)
+                .filter(|&t| t >= 0)
+                .last()
+            else {
+                continue;
+            };
+            let death = self
+                .of_target(target, &[sc::CHANGE_DEAD])
+                .map(|e| e.time - self.offset)
+                .last();
+            let mut phase = SubPhase {
+                start,
+                end: death.unwrap_or(self.duration).min(self.duration),
+                targets: Vec::new(),
+            };
+            self.add_target(&mut phase, index);
+            phases.push(phase);
+        }
+        phases
+    }
+
+    /// Whispering Shadow: a phase before each guttering light and the darkness that lasts until
+    /// the shadow is stunned or its breakbar breaks.
+    fn whispering_shadow(&self, main: usize) -> Vec<SubPhase> {
+        let target = &self.targets[main];
+        let breakbar_ends: Vec<i64> = self
+            .of_target(target, &[sc::BREAKBAR_STATE])
+            .filter(|e| e.value != 0)
+            .map(|e| e.time - self.offset)
+            .collect();
+        let stuns: Vec<i64> = self
+            .kept
+            .events
+            .iter()
+            .filter(|e| {
+                e.state_change == sc::BUFF_APPLY
+                    && i64::from(e.skill_id) == skill::STUN
+                    && e.dst_agent != 0
+                    && target.addresses.contains(&self.redirect(e.dst_agent))
+            })
+            .map(|e| e.time - self.offset)
+            .collect();
+        let new = |start: i64, end: i64| SubPhase {
+            start,
+            end,
+            targets: Vec::new(),
+        };
+        let mut phases = Vec::new();
+        let mut start = 0;
+        let mut first = true;
+        for (cast_start, cast_end, id) in self.animated_casts_of(target, &[]) {
+            if cast_end <= cast_start {
+                continue;
+            }
+            if id == skill::GUTTERING_LIGHT || id == skill::GUTTERING_LIGHT_CM {
+                if first {
+                    phases.push(new(start, cast_start));
+                    let stunned = stuns.iter().copied().find(|&t| t > cast_start);
+                    let broken = breakbar_ends.iter().copied().find(|&t| t > cast_start);
+                    let end = stunned
+                        .unwrap_or(self.duration)
+                        .min(broken.unwrap_or(i64::MAX));
+                    phases.push(new(cast_start, end));
+                    start = end;
+                }
+                first = false;
+            } else {
+                first = true;
+            }
+        }
+        if start < self.duration {
+            phases.push(new(start, self.duration));
+        }
+        for phase in &mut phases {
+            self.add_target(phase, main);
+        }
+        phases
+    }
+
     /// Old Lion's Court: each prototype has phases between its ley woven shieldings.
     fn old_lions_court(&self, challenge_mode: bool) -> Vec<SubPhase> {
         let find = |challenge: i32, normal: i32| {
@@ -910,6 +1030,9 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::EPARCH_LONELY_TOWER => fight.eparch(main),
+        species::BERG => fight.bandit_trio(),
+        species::WHISPERING_SHADOW => fight.whispering_shadow(main),
         species::PROTOTYPE_VERMILION => fight.old_lions_court(false),
         species::PROTOTYPE_VERMILION_CM => fight.old_lions_court(true),
         species::MATTHIAS => fight.matthias(main),
