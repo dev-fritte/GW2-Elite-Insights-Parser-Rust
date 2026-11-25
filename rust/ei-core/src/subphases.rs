@@ -185,7 +185,20 @@ impl Fight<'_> {
         target_index: usize,
         add_skip: bool,
         begin_with_start: bool,
+        range: (i64, i64),
+    ) -> Vec<SubPhase> {
+        self.by_invuln_filtered(ids, target_index, add_skip, begin_with_start, range, true)
+    }
+
+    /// `GetSubPhasesByInvul`; `filter_small` drops the phases of 100 ms or less.
+    fn by_invuln_filtered(
+        &self,
+        ids: &[i64],
+        target_index: usize,
+        add_skip: bool,
+        begin_with_start: bool,
         (start, end): (i64, i64),
+        filter_small: bool,
     ) -> Vec<SubPhase> {
         let sequence = self.invuln_sequence(ids, &self.targets[target_index], begin_with_start);
         let mut last = start;
@@ -213,7 +226,7 @@ impl Fight<'_> {
         if !next_is_skip || add_skip {
             phases.push(new(last, end));
         }
-        phases.retain(|p| p.end - p.start > 100);
+        phases.retain(|p| !filter_small || p.end - p.start > 100);
         phases
     }
 
@@ -1217,6 +1230,112 @@ impl Fight<'_> {
         phases
     }
 
+    /// Kela: storm phases (she is burrowed) between the main phases.
+    fn kela(&self, main: usize) -> Vec<SubPhase> {
+        let casts = self.animated_casts_of(&self.targets[main], &[]);
+        let burrow_or_ambush: Vec<i64> = casts
+            .iter()
+            .filter(|c| {
+                [skill::KELA_BURROW, skill::KELA_AMBUSH1, skill::KELA_AMBUSH2].contains(&c.2)
+            })
+            .map(|c| c.0)
+            .collect();
+        let non_storm: Vec<i64> = casts
+            .iter()
+            .filter(|c| {
+                ![
+                    skill::KELA_BURROW,
+                    skill::KELA_AMBUSH1,
+                    skill::KELA_AMBUSH2,
+                    skill::ARC_DPS_DODGE20220307,
+                ]
+                .contains(&c.2)
+                    && c.1 - c.0 > SERVER_DELAY
+            })
+            .map(|c| c.0)
+            .collect();
+        let candidates = self.by_invuln_filtered(
+            &[skill::KELA_BURROWED],
+            main,
+            true,
+            true,
+            (0, self.duration),
+            false,
+        );
+        let mut mains: Vec<(i64, i64)> = Vec::new();
+        let mut candidate_storms: Vec<(i64, i64)> = Vec::new();
+        for (i, p) in candidates.iter().enumerate() {
+            if i % 2 == 0 {
+                mains.push((p.start, p.end));
+            } else {
+                candidate_storms.push((p.start, p.end));
+            }
+        }
+        let quickly = |previous_end: i64| {
+            burrow_or_ambush
+                .iter()
+                .any(|&t| t <= previous_end + 5000 && t >= previous_end)
+        };
+        let mut storms: Vec<(i64, i64)> = Vec::new();
+        for &(start, end) in &candidate_storms {
+            if let Some(current) = storms.last_mut() {
+                let previous_end = current.1;
+                let non_storm_cast = non_storm
+                    .iter()
+                    .any(|&t| t >= previous_end - SERVER_DELAY && t <= start + SERVER_DELAY);
+                if !non_storm_cast && quickly(previous_end) {
+                    current.1 = end;
+                    continue;
+                }
+            }
+            storms.push((start, end));
+        }
+        // Kela is killed before she can burrow again: the following main phase is no phase
+        if let Some(&(_, last_end)) = storms.last()
+            && let Some(index) = mains.iter().position(|m| m.0 >= last_end)
+        {
+            let fight_end = mains[index].1;
+            let non_storm_cast = non_storm
+                .iter()
+                .any(|&t| t >= last_end - SERVER_DELAY && t <= fight_end + SERVER_DELAY);
+            if !non_storm_cast && quickly(last_end) {
+                if let Some(last) = storms.last_mut() {
+                    last.1 = fight_end;
+                }
+                mains.remove(index);
+            }
+        }
+        let crabs = [species::EXECUTOR_OF_WAVES];
+        let crocs = [species::ELITE_CROCODILIAN_RAZORTOOTH];
+        let mut phases = Vec::new();
+        for &(start, end) in &storms {
+            let mut phase = SubPhase {
+                start,
+                end,
+                targets: Vec::new(),
+            };
+            self.add_target(&mut phase, main);
+            self.add_targets_of(&mut phase, &crabs);
+            self.add_targets_of(&mut phase, &crocs);
+            phases.push(phase);
+        }
+        for &(start, end) in &mains {
+            let middle = (start + end) / 2;
+            if storms.iter().any(|s| (s.0..=s.1).contains(&middle)) {
+                continue;
+            }
+            let mut phase = SubPhase {
+                start,
+                end,
+                targets: Vec::new(),
+            };
+            self.add_target(&mut phase, main);
+            self.add_targets_of(&mut phase, &crabs);
+            phases.push(phase);
+        }
+        phases
+    }
+
     /// Statue of Darkness: from the loss of the first invulnerability each eye has a phase
     /// whenever it is not determined.
     fn statue_of_darkness(&self) -> Vec<SubPhase> {
@@ -1685,6 +1804,7 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::KELA_SENESCHAL_OF_WAVES => fight.kela(main),
         species::CONJURED_AMALGAMATE => fight.conjured_amalgamate(main),
         species::NIKARE => fight.twin_largos(main, &extras.players),
         species::VOICE_OF_THE_FALLEN => fight.kodan(main),
