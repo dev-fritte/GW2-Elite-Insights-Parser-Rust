@@ -647,6 +647,113 @@ impl Fight<'_> {
         phases
     }
 
+    /// Dhuum: the pre event, the fight up to 10%, the shielded Dhuum and the ritual, and in
+    /// between the soul splits.
+    fn dhuum(&self, main: usize) -> Vec<SubPhase> {
+        let end = self.duration;
+        let target = &self.targets[main];
+        let casts = self.animated_casts_of(target, &[]);
+        let has_pre_event = !casts.iter().any(|c| {
+            c.2 != skill::WEAPON_STOW && c.2 != skill::WEAPON_DRAW && (0..=40_000).contains(&c.0)
+        });
+        let new = |start: i64, end: i64| SubPhase {
+            start,
+            end,
+            targets: Vec::new(),
+        };
+        let mut phases: Vec<SubPhase> = Vec::new();
+        // the part of the fight in which the soul splits happen: its start and its fight phase
+        let mut main_start = None;
+        let mut fight_end = None;
+        let mut fight = |start: i64, phases: &mut Vec<SubPhase>| {
+            let Some(shield) = casts.iter().find(|c| c.2 == skill::MAJOR_SOUL_SPLIT) else {
+                return;
+            };
+            let shield = shield.0;
+            phases.push(new(start, shield));
+            fight_end = Some(shield);
+            let vulnerable = casts
+                .iter()
+                .find(|c| c.2 == skill::DHUUM_VULNERABLE_LAST10_PERCENT && c.0 >= shield);
+            if let Some(vulnerable) = vulnerable {
+                phases.push(new(shield, vulnerable.0));
+                phases.push(new(vulnerable.0, end));
+            } else {
+                phases.push(new(shield, end));
+            }
+        };
+        if has_pre_event {
+            let released = self
+                .kept
+                .events
+                .iter()
+                .filter(|e| {
+                    e.state_change == sc::BUFF_REMOVE_ALL
+                        && i64::from(e.skill_id) == skill::DETERMINED762
+                        && e.src_agent != 0
+                        && target.addresses.contains(&self.redirect(e.src_agent))
+                })
+                .map(|e| e.time - self.offset)
+                .find(|&t| t > 115_000);
+            if let Some(pre_end) = released {
+                phases.push(new(0, pre_end));
+                phases.push(new(pre_end, end));
+                main_start = Some(pre_end);
+                fight(pre_end, &mut phases);
+            }
+        } else {
+            main_start = Some(0);
+            fight(0, &mut phases);
+        }
+        if let Some(start) = main_start {
+            let splits_end = fight_end.unwrap_or(end);
+            phases.extend(self.soul_splits(&casts, start, splits_end));
+        }
+        for phase in &mut phases {
+            self.add_target(phase, main);
+        }
+        // the pre event also has the enforcers as targets
+        if has_pre_event
+            && let Some(pre) = phases.first_mut()
+            && pre.start == 0
+        {
+            self.add_targets_of(pre, &[species::DHUUMS_ENFORCER]);
+        }
+        phases
+    }
+
+    /// The phases between the soul splits of Dhuum.
+    fn soul_splits(&self, casts: &[(i64, i64, i64)], start: i64, end: i64) -> Vec<SubPhase> {
+        let cycles: Vec<_> = casts
+            .iter()
+            .filter(|c| c.2 == skill::CATACLYSMIC_CYCLE)
+            .collect();
+        let marks: Vec<_> = casts
+            .iter()
+            .filter(|c| c.2 == skill::GREATER_DEATH_MARK)
+            .collect();
+        if marks.len() < cycles.len() {
+            return Vec::new();
+        }
+        let new = |start: i64, end: i64| SubPhase {
+            start,
+            end,
+            targets: Vec::new(),
+        };
+        let mut phases = Vec::new();
+        let mut from = start;
+        for (cycle, mark) in cycles.iter().zip(&marks) {
+            let split_start = mark.0.min(end);
+            let mut pre = new(from, split_start);
+            self.add_targets_of(&mut pre, &[species::DHUUMS_ENFORCER]);
+            phases.push(pre);
+            phases.push(new(split_start, cycle.1.min(end)));
+            from = cycle.1;
+        }
+        phases.push(new(from, end));
+        phases
+    }
+
     /// Eparch (challenge mode): phases alternate with the splits of the incarnations.
     fn eparch(&self, main: usize) -> Vec<SubPhase> {
         let split = [
@@ -1083,6 +1190,7 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::DHUUM => fight.dhuum(main),
         species::QADIM => fight.qadim(main, &extras.pyre_starts),
         species::EPARCH_LONELY_TOWER => fight.eparch(main),
         species::BERG => fight.bandit_trio(),

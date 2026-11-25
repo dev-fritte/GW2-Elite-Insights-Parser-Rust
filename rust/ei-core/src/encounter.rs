@@ -1602,7 +1602,7 @@ fn qadim_pyre_is_known(kept: &Kept, address: u64) -> bool {
         (-7846.0, 10612.0),
     ];
     /// `ParserHelper.InchDistanceThresholdSquared`.
-    const THRESHOLD_SQUARED: f32 = 1.414_213_6 * 1.414_213_6;
+    const THRESHOLD_SQUARED: f32 = std::f32::consts::SQRT_2 * std::f32::consts::SQRT_2;
     kept.events
         .iter()
         .find(|e| {
