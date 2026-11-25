@@ -4,6 +4,7 @@
 pub mod buffs;
 pub mod effect_guids;
 pub mod marker_guids;
+pub mod mechanics;
 pub mod skill_ids;
 pub mod species_ids;
 pub mod targets;
