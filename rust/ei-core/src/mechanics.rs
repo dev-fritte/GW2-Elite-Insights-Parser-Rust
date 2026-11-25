@@ -515,3 +515,75 @@ fn missed_buffs(kept: &Kept, players: &[Player], offset: i64, duration: i64) -> 
     }
     rows
 }
+
+/// `DamageResult` values of direct hits: normal, critical, glancing.
+const DIRECT_HIT_RESULTS: std::ops::RangeInclusive<u8> = 0..=2;
+/// `DamageResult` values of buff damage that counts as hit: all kinds of buff cycles.
+const BUFF_HIT_RESULTS: std::ops::RangeInclusive<u8> = 14..=18;
+
+/// The mechanics of the encounter logic of the log that data alone describes (hits on players,
+/// buffs applied to players); the ones with a lambda, a sub mechanic or similar are not ported.
+///
+/// Times are relative to the start of the fight, which lasts `duration`.
+#[must_use]
+pub fn encounter_mechanics(
+    kept: &Kept,
+    players: &[Player],
+    trigger_id: i32,
+    offset: i64,
+    duration: i64,
+) -> Vec<MechanicRow> {
+    use ei_data::mechanics::{Kind, MECHANICS};
+    let defs: Vec<_> = MECHANICS
+        .iter()
+        .filter(|m| m.trigger_id == trigger_id)
+        .filter(|m| {
+            let (min, max) = m.builds;
+            let (min_evtc, max_evtc) = m.evtc_builds;
+            kept.gw2_build < max
+                && kept.gw2_build >= min
+                && kept.version.build < max_evtc
+                && kept.version.build >= min_evtc
+        })
+        .collect();
+    if defs.is_empty() {
+        return Vec::new();
+    }
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    let spans = crate::encounter::spans(kept);
+    let active = active_players(kept, players, &spans);
+    let index_of = |address: u64| {
+        players
+            .iter()
+            .position(|p| p.address == redirect(address))
+            .filter(|&i| active[i])
+    };
+    defs.iter()
+        .map(|m| {
+            let events = kept
+                .events
+                .iter()
+                .filter(|e| e.dst_agent != 0 && m.ids.contains(&i64::from(e.skill_id)))
+                .filter(|e| match m.kind {
+                    Kind::PlayerDstHit => {
+                        e.state_change == sc::COMBAT
+                            && if e.is_buff == 0 {
+                                DIRECT_HIT_RESULTS.contains(&e.result)
+                            } else {
+                                BUFF_HIT_RESULTS.contains(&e.result)
+                            }
+                    }
+                    Kind::PlayerDstBuffApply => {
+                        matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+                    }
+                })
+                .filter_map(|e| Some((e.time - offset, index_of(e.dst_agent)?)))
+                .filter(|(time, _)| (0..=duration).contains(time))
+                .collect();
+            MechanicRow {
+                name: m.name,
+                events,
+            }
+        })
+        .collect()
+}

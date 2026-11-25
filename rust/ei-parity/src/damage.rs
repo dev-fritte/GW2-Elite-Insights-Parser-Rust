@@ -576,7 +576,17 @@ fn compare_mechanics(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    for name in NAMES {
+    let encounter_names: std::collections::BTreeSet<&str> = analysis
+        .mechanics
+        .iter()
+        .map(|m| m.name)
+        .filter(|n| !NAMES.contains(n))
+        .collect();
+    for (name, key) in NAMES.into_iter().map(|n| (n, "mechanics (generic)")).chain(
+        encounter_names
+            .into_iter()
+            .map(|n| (n, "mechanics (encounter)")),
+    ) {
         let mut expected: Vec<(i64, String)> = theirs_all
             .iter()
             .filter(|m| m.get("name").and_then(Value::as_str) == Some(name))
@@ -602,7 +612,7 @@ fn compare_mechanics(
             .collect();
         expected.sort();
         ours.sort();
-        let s = stats.entry("mechanics (generic)").or_default();
+        let s = stats.entry(key).or_default();
         s.compared += 1;
         if ours != expected {
             s.mismatches += 1;

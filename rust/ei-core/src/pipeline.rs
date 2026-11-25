@@ -302,6 +302,7 @@ fn player_graphs(
 ///
 /// # Errors
 /// [`AnalysisError`] for unreadable logs or logs of unsupported arcdps builds.
+#[allow(clippy::too_many_lines)]
 pub fn analyze_damage(
     data: &[u8],
     api: &Api,
@@ -335,8 +336,15 @@ pub fn analyze_damage(
     let targets = crate::encounter::log_targets(&kept, evtc.agents(), timing.offset);
     let player_addresses: Vec<u64> = players.iter().map(|p| p.address).collect();
     let all_events: Vec<&evtc_ingest::CombatRecord> = kept.events.iter().collect();
-    let mechanics =
+    let mut mechanics =
         crate::mechanics::base_mechanics(&kept, &players, timing.offset, timing.duration);
+    mechanics.extend(crate::mechanics::encounter_mechanics(
+        &kept,
+        &players,
+        i32::from(header.trigger_id()),
+        timing.offset,
+        timing.duration,
+    ));
     let mechanic_players = players.clone();
     let mut out = Vec::with_capacity(players.len());
     for player in players {

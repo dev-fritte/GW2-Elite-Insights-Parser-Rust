@@ -22,7 +22,24 @@ Die allgemeinen Mechaniken, die jedes Log hat (`LogLogic`-Konstruktor):
 
 Zeiten sind relativ zum Kampfbeginn, nur Ereignisse im Kampf zählen.
 
+## Encounter-Mechaniken aus Daten
+
+`GW2EIParserReference --dump-mechanics docs/phase7/mechanics.tsv` liest per Reflexion die Mechanik-Listen aller Logiken (1.642 Einträge: Typ, Skill-IDs, Kurzname, Abklingzeit, Builds und die Merker, ob Lambda, Untermechanik, Zeitbegrenzer, Aktivierungsbedingung oder Minions daran hängen). `tools/gen/Gen-Mechanics.ps1` erzeugt daraus `ei-data/src/generated/mechanics.rs` mit den Einträgen **ohne** Zusatz, soweit der Typ portiert ist:
+
+| Typ | Einträge (ohne Zusatz / alle) | Auswertung |
+| --- | ---: | --- |
+| `PlayerDstHealthDamageHitMechanic` | 592 / 669 | Treffer (direkt: normal, kritisch, Streifschuss; Buff-Schaden: Ergebnis 14 bis 18) mit der Skill-ID auf einen Spieler |
+| `PlayerDstBuffApplyMechanic` | 327 / 386 | Buff-Anwendung (auch Anfangszustand) auf einen Spieler |
+
+Die Abklingzeit (ICD) gilt nur im HTML, nicht im JSON, und wird deshalb nicht angewendet. Die Spielerliste ist wie in C# auf aktive Spieler beschränkt.
+
+Noch ohne Auswertung, aber schon in der TSV und ohne Zusatz: `EnemyCastStart` (91), `EnemyDstBuffApply` (84), `EnemyCastEnd` (5), `PlayerSrcHit` (11), `PlayerCastStart` (10), `SpawnMechanic` (18), `SubMechanic` (27). Mit Zusatz (Lambda usw.) sind gut 500 Einträge aller Typen; sie brauchen je Mechanik Code.
+
 ## Messung (103 Korpus-Logs)
+
+Encounter-Mechaniken aus Daten: 1.190 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **9 Abweichungen**, alle aus den bekannten Zeitursachen (Deimos Kampfende 6, Seelenverzehrer Kampfbeginn 3).
+
+Allgemeine Mechaniken:
 
 14 Mechaniken je Log, 1.442 Vergleiche (sortierte Liste aus Zeit und Spieler), **17 Abweichungen**:
 
@@ -35,5 +52,5 @@ Nicht nachgebildet: die Reihenfolge der Spielerliste von C# (nach Untergruppe, i
 
 ## Nicht portiert
 
-- Alle encounterspezifischen Mechaniken (rund 1.100 Definitionen in 87 Logiken).
+- Die encounterspezifischen Mechaniken mit Zusatz und die Typen ohne Auswertung (siehe oben).
 - Untermechaniken (Stabilität), Gewichte, interne Abklingzeiten, Zeitbegrenzer.
