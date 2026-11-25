@@ -1175,6 +1175,48 @@ impl Fight<'_> {
         phases
     }
 
+    /// Conjured Amalgamate: arm phases (with the arms that can be attacked) alternate with the
+    /// burn phases of the body.
+    fn conjured_amalgamate(&self, main: usize) -> Vec<SubPhase> {
+        let left = self
+            .targets
+            .iter()
+            .position(|t| t.species == species::CA_LEFT_ARM);
+        let right = self
+            .targets
+            .iter()
+            .position(|t| t.species == species::CA_RIGHT_ARM);
+        let on_times = |arm: Option<usize>| -> Vec<i64> {
+            arm.map_or_else(Vec::new, |i| {
+                crate::encounter::attack_target_on_times(
+                    self.kept,
+                    self.offset,
+                    &self.targets[i].addresses,
+                )
+                .into_iter()
+                .filter(|t| (0..=self.duration).contains(t))
+                .collect()
+            })
+        };
+        let (left_times, right_times) = (on_times(left), on_times(right));
+        let mut phases = self.by_invuln(&[skill::CA_INVUL], main, true, false, (0, self.duration));
+        for (i, phase) in phases.iter_mut().enumerate() {
+            let burn = i % 2 == 1;
+            if burn {
+                self.add_target(phase, main);
+            }
+            let in_phase =
+                |times: &[i64]| times.iter().any(|t| (phase.start..=phase.end).contains(t));
+            let (l, r) = (in_phase(&left_times), in_phase(&right_times));
+            for (present, arm) in [(l, left), (r, right)] {
+                if let (true, Some(arm)) = (present, arm) {
+                    self.add_target(phase, arm);
+                }
+            }
+        }
+        phases
+    }
+
     /// Statue of Darkness: from the loss of the first invulnerability each eye has a phase
     /// whenever it is not determined.
     fn statue_of_darkness(&self) -> Vec<SubPhase> {
@@ -1643,6 +1685,7 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::CONJURED_AMALGAMATE => fight.conjured_amalgamate(main),
         species::NIKARE => fight.twin_largos(main, &extras.players),
         species::VOICE_OF_THE_FALLEN => fight.kodan(main),
         species::ADINA => fight.adina(main),

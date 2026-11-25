@@ -1686,7 +1686,19 @@ fn targetable_intervals(kept: &Kept, offset: i64) -> Vec<(u64, u64, i64, i64)> {
         .iter()
         .filter(|e| e.state_change == sc::ATTACK_TARGET)
     {
-        let target = redirect(e.dst_agent);
+        // one end of the record is the attack target (it has most targetable records), the
+        // other the gadget it belongs to
+        let toggles = |a: u64| {
+            kept.events
+                .iter()
+                .filter(|t| t.state_change == sc::TARGETABLE && redirect(t.src_agent) == a)
+                .count()
+        };
+        let (owner, target) = if toggles(redirect(e.dst_agent)) >= toggles(redirect(e.src_agent)) {
+            (redirect(e.src_agent), redirect(e.dst_agent))
+        } else {
+            (redirect(e.dst_agent), redirect(e.src_agent))
+        };
         if seen.contains(&target) {
             continue;
         }
@@ -1708,10 +1720,28 @@ fn targetable_intervals(kept: &Kept, offset: i64) -> Vec<(u64, u64, i64, i64)> {
                 .iter()
                 .find(|c| !c.1 && c.0 > start)
                 .map_or(kept.log_end_time - offset, |c| c.0);
-            out.push((redirect(e.src_agent), target, start, end));
+            out.push((owner, target, start, end));
         }
     }
     out
+}
+
+/// The times an attack target of an agent becomes targetable (`Conjured Amalgamate` arms): the
+/// first attack target of the agent.
+#[must_use]
+pub fn attack_target_on_times(kept: &Kept, offset: i64, owners: &[u64]) -> Vec<i64> {
+    let intervals: Vec<_> = targetable_intervals(kept, offset)
+        .into_iter()
+        .filter(|(owner, ..)| owners.contains(owner))
+        .collect();
+    let Some(first) = intervals.first().map(|i| i.1) else {
+        return Vec::new();
+    };
+    intervals
+        .iter()
+        .filter(|i| i.1 == first)
+        .map(|i| i.2)
+        .collect()
 }
 
 /// The hands of Adina (`Adina.FindHands`): one agent for each time a hand can be attacked.
@@ -1719,6 +1749,9 @@ fn targetable_intervals(kept: &Kept, offset: i64) -> Vec<(u64, u64, i64, i64)> {
 pub fn adina_hands(kept: &Kept, offset: i64) -> Vec<Target> {
     const ERUPTION: [(f32, f32); 2] = [(15_570.5, -693.117), (14_277.2, -2_202.52)];
     const THRESHOLD_SQUARED: f32 = std::f32::consts::SQRT_2 * std::f32::consts::SQRT_2;
+    if i32::from(kept.trigger_id) != species::target_id::ADINA {
+        return Vec::new();
+    }
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
     targetable_intervals(kept, offset)
         .into_iter()
