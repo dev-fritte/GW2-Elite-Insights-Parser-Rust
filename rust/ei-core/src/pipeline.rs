@@ -452,7 +452,12 @@ pub fn analyze_offset(data: &[u8]) -> Result<OffsetAnalysis, AnalysisError> {
             offset.unwrap_or(0),
             duration,
             &crate::subphases::Extras {
-                lamps: crate::encounter::qadim_lamps(&kept, evtc.agents(), offset.unwrap_or(0)),
+                extra_targets: {
+                    let mut extra =
+                        crate::encounter::qadim_lamps(&kept, evtc.agents(), offset.unwrap_or(0));
+                    extra.extend(crate::encounter::adina_hands(&kept, offset.unwrap_or(0)));
+                    extra
+                },
                 pyre_starts: crate::encounter::species_first_times(
                     &kept,
                     evtc.agents(),

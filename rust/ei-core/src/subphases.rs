@@ -102,7 +102,7 @@ impl Fight<'_> {
             let first_of = |states: &[u8]| {
                 self.of_target(target, states)
                     .map(|e| e.time - self.offset)
-                    .next()
+                    .find(|t| (target.first..=target.last).contains(t))
             };
             let enter = first_of(&[sc::ENTER_COMBAT]).or_else(|| first_of(&[sc::SPAWN]));
             start = start.min(enter.unwrap_or(target.first));
@@ -110,6 +110,7 @@ impl Fight<'_> {
             let despawn = self
                 .of_target(target, &[sc::DESPAWN])
                 .map(|e| e.time - self.offset)
+                .filter(|t| (target.first..=target.last).contains(t))
                 .last();
             end = end.max(dead.or(despawn).unwrap_or(target.last));
         }
@@ -875,6 +876,100 @@ impl Fight<'_> {
         segments
     }
 
+    /// The time frames in which a target has a buff.
+    fn buff_present_segments(&self, target: &Target, buff: i64) -> Vec<(i64, i64)> {
+        let free = self.buff_free_segments(target, buff);
+        let mut present = Vec::new();
+        let mut from = 0;
+        for &(start, end) in &free {
+            if start > from {
+                present.push((from, start));
+            }
+            from = end;
+        }
+        if from < self.duration {
+            present.push((from, self.duration));
+        }
+        // a buff present from the start would have a free segment of zero length
+        present.retain(|p| p.0 < p.1);
+        present
+    }
+
+    /// Kardinal Adina: splits while she is determined (with the hands), main phases between the
+    /// quakes (all six pillars pandemonium at one time).
+    fn adina(&self, main: usize) -> Vec<SubPhase> {
+        const HANDS: [i32; 2] = [species::HAND_OF_EROSION, species::HAND_OF_ERUPTION];
+        let target = &self.targets[main];
+        let end = self.duration;
+        let mut splits = Vec::new();
+        let mut split_ends = Vec::new();
+        let invuls = self.buff_present_segments(target, skill::DETERMINED762);
+        for &(start, stop) in &invuls {
+            let mut phase = SubPhase {
+                start,
+                end: stop,
+                targets: Vec::new(),
+            };
+            split_ends.push(stop);
+            self.add_targets_of(&mut phase, &HANDS);
+            self.fit(&mut phase);
+            splits.push(phase);
+        }
+        // the quakes: all six pillars at the same time
+        let applies = self.buff_times_on(target, skill::PILLAR_PANDEMONIUM, true);
+        let mut quakes: Vec<i64> = Vec::new();
+        for &time in &applies {
+            if !quakes.contains(&time) && applies.iter().filter(|&&t| t == time).count() == 6 {
+                quakes.push(time);
+            }
+        }
+        let barrage = self
+            .animated_casts(target, skill::BOULDER_BARRAGE)
+            .into_iter()
+            .find(|c| c.0 < 6000);
+        let mut start = barrage.map_or(0, |c| c.1);
+        let mut mains: Vec<(i64, i64)> = Vec::new();
+        if quakes.is_empty() {
+            if start > 0 && invuls.is_empty() {
+                mains.push((start, end));
+            }
+        } else {
+            for &quake in &quakes {
+                let mut current = split_ends
+                    .iter()
+                    .rfind(|&&e| e < quake)
+                    .copied()
+                    .unwrap_or(0);
+                if current == 0 {
+                    current = start;
+                }
+                if let Some(&next) = split_ends.iter().find(|&&e| e > quake) {
+                    start = next;
+                }
+                mains.push((current, quake));
+            }
+            if mains.last().is_some_and(|m| m.0 != start) {
+                mains.push((start, end));
+            }
+        }
+        let mut phases = splits;
+        for (from, to) in mains {
+            let mut phase = SubPhase {
+                start: from,
+                end: to,
+                targets: Vec::new(),
+            };
+            self.add_target(&mut phase, main);
+            for (index, t) in self.targets.iter().enumerate() {
+                if HANDS.contains(&t.species) && (from..=to).contains(&t.first) {
+                    self.add_target(&mut phase, index);
+                }
+            }
+            phases.push(phase);
+        }
+        phases
+    }
+
     /// Statue of Darkness: from the loss of the first invulnerability each eye has a phase
     /// whenever it is not determined.
     fn statue_of_darkness(&self) -> Vec<SubPhase> {
@@ -1231,8 +1326,9 @@ impl Fight<'_> {
 pub struct Extras {
     /// The first times of the pyre guardians of Qadim.
     pub pyre_starts: Vec<i64>,
-    /// The lamps of Qadim (volatile species, so no regular targets).
-    pub lamps: Vec<Target>,
+    /// Agents of volatile species that are no regular targets (the lamps of Qadim, the hands of
+    /// Adina).
+    pub extra_targets: Vec<Target>,
 }
 
 /// The sub phases of an encounter, or `None` if its phases are not ported. Times are relative to
@@ -1246,7 +1342,11 @@ pub fn encounter_phases(
     duration: i64,
     extras: &Extras,
 ) -> Option<Vec<SubPhase>> {
-    let all_targets: Vec<Target> = targets.iter().chain(&extras.lamps).cloned().collect();
+    let all_targets: Vec<Target> = targets
+        .iter()
+        .chain(&extras.extra_targets)
+        .cloned()
+        .collect();
     let targets = &all_targets[..];
     let fight = Fight {
         kept,
@@ -1336,6 +1436,7 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::ADINA => fight.adina(main),
         species::EYE_OF_FATE => fight.statue_of_darkness(),
         species::FRAENIR_OF_JORMAG => fight.fraenir(main),
         species::DHUUM => fight.dhuum(main),

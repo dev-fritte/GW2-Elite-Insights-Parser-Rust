@@ -1674,6 +1674,95 @@ pub fn qadim_lamps(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
         .collect()
 }
 
+/// The intervals in which an attack target is targetable, with the agent that owns it
+/// (`AttackTargetEvent.GetTargetableEvents`): (owner, attack target, start, end). Times have the
+/// offset applied.
+fn targetable_intervals(kept: &Kept, offset: i64) -> Vec<(u64, u64, i64, i64)> {
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    let mut out = Vec::new();
+    let mut seen: Vec<u64> = Vec::new();
+    for e in kept
+        .events
+        .iter()
+        .filter(|e| e.state_change == sc::ATTACK_TARGET)
+    {
+        let target = redirect(e.dst_agent);
+        if seen.contains(&target) {
+            continue;
+        }
+        let changes: Vec<(i64, bool)> = kept
+            .events
+            .iter()
+            .filter(|t| t.state_change == sc::TARGETABLE && redirect(t.src_agent) == target)
+            .map(|t| (t.time - offset, t.dst_agent == 1))
+            .collect();
+        if !changes.iter().any(|c| c.1) {
+            continue;
+        }
+        seen.push(target);
+        for (i, &(start, on)) in changes.iter().enumerate() {
+            if !on {
+                continue;
+            }
+            let end = changes[i + 1..]
+                .iter()
+                .find(|c| !c.1 && c.0 > start)
+                .map_or(kept.log_end_time - offset, |c| c.0);
+            out.push((redirect(e.src_agent), target, start, end));
+        }
+    }
+    out
+}
+
+/// The hands of Adina (`Adina.FindHands`): one agent for each time a hand can be attacked.
+#[must_use]
+pub fn adina_hands(kept: &Kept, offset: i64) -> Vec<Target> {
+    const ERUPTION: [(f32, f32); 2] = [(15_570.5, -693.117), (14_277.2, -2_202.52)];
+    const THRESHOLD_SQUARED: f32 = std::f32::consts::SQRT_2 * std::f32::consts::SQRT_2;
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    targetable_intervals(kept, offset)
+        .into_iter()
+        .map(|(hand, _, start, end)| {
+            let eruption = kept
+                .events
+                .iter()
+                .find(|e| {
+                    e.state_change == sc::POSITION
+                        && e.src_agent != 0
+                        && redirect(e.src_agent) == hand
+                })
+                .is_some_and(|e| {
+                    let x = f32::from_bits((e.dst_agent & 0xFFFF_FFFF) as u32);
+                    let y = f32::from_bits((e.dst_agent >> 32) as u32);
+                    ERUPTION
+                        .iter()
+                        .any(|&(px, py)| (px - x).powi(2) + (py - y).powi(2) < THRESHOLD_SQUARED)
+                });
+            // the new agent is only known from its first to its last record inside the interval
+            let times: Vec<i64> = kept
+                .events
+                .iter()
+                .filter(|e| e.src_agent != 0 && redirect(e.src_agent) == hand)
+                .map(|e| e.time - offset)
+                .filter(|t| (start..=end).contains(t))
+                .collect();
+            let first = times.iter().copied().min().unwrap_or(start);
+            let last = times.iter().copied().max().unwrap_or(end);
+            Target {
+                address: hand,
+                addresses: vec![hand],
+                species: if eruption {
+                    species::target_id::HAND_OF_ERUPTION
+                } else {
+                    species::target_id::HAND_OF_EROSION
+                },
+                first,
+                last,
+            }
+        })
+        .collect()
+}
+
 /// The first times (with the offset applied) of the agents of a species, ordered by first appearance.
 #[must_use]
 pub fn species_first_times(kept: &Kept, table: AgentTable<'_>, offset: i64, id: u32) -> Vec<i64> {
