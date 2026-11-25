@@ -699,6 +699,10 @@ enum Loss {
     AnyHit(&'static [i64]),
     /// An application of the buff.
     Buff(i64),
+    /// Temple of Febe: despair hits, death or disconnect.
+    Febe,
+    /// Decima: fulgent fence, exposed under fluxlance or thunder, death or disconnect.
+    Decima,
 }
 
 /// The loss of an achievement that follows the usual template (`InsertAchievementEligibityEventAndRemovePhase`
@@ -719,6 +723,20 @@ struct Rule {
 }
 
 const RULES: &[Rule] = &[
+    Rule {
+        logic: "TempleOfFebe",
+        id: 9,
+        challenge: true,
+        inverted: false,
+        loss: Loss::Febe,
+    },
+    Rule {
+        logic: "DecimaTheStormsinger",
+        id: 15,
+        challenge: true,
+        inverted: false,
+        loss: Loss::Decima,
+    },
     Rule {
         logic: "SoullessHorror",
         id: 11,
@@ -844,6 +862,7 @@ fn achievement_events(
 ) -> Achievements {
     let mut out = HashMap::new();
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    let special = SpecialData::new(kept, players);
     for id in defs
         .iter()
         .filter(|m| m.kind == ei_data::mechanics::Kind::Achievement)
@@ -862,36 +881,41 @@ fn achievement_events(
                 if last.min(fight.duration) - first.max(0) <= 0 {
                     continue;
                 }
-                let loss = kept.events.iter().find(|e| {
-                    let time = e.time - fight.offset;
-                    e.dst_agent != 0
-                        && redirect(e.dst_agent) == player.address
-                        && (0..=fight.duration).contains(&time)
-                        && (first..=last).contains(&time)
-                        && match rule.loss {
-                            Loss::Hit(ids) => {
-                                e.state_change == sc::COMBAT
-                                    && ids.contains(&i64::from(e.skill_id))
-                                    && if e.is_buff == 0 {
-                                        DIRECT_HIT_RESULTS.contains(&e.result)
-                                    } else {
-                                        BUFF_HIT_RESULTS.contains(&e.result)
-                                    }
-                            }
-                            Loss::AnyHit(ids) => {
-                                e.state_change == sc::COMBAT && ids.contains(&i64::from(e.skill_id))
-                            }
-                            Loss::Buff(buff) => {
-                                matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
-                                    && i64::from(e.skill_id) == buff
-                            }
+                let loss = match rule.loss {
+                    Loss::Febe | Loss::Decima => {
+                        let status = special.status(kept, players, spans, i);
+                        let ctx = Special {
+                            kept,
+                            player,
+                            fight,
+                            index: i,
+                            owner: &*special.owner,
+                            status: &status,
+                        };
+                        if matches!(rule.loss, Loss::Febe) {
+                            ctx.febe()
+                        } else {
+                            ctx.decima()
                         }
-                });
+                    }
+                    _ => kept
+                        .events
+                        .iter()
+                        .find(|e| {
+                            let time = e.time - fight.offset;
+                            e.dst_agent != 0
+                                && redirect(e.dst_agent) == player.address
+                                && (0..=fight.duration).contains(&time)
+                                && (first..=last).contains(&time)
+                                && standard_loss(rule, e)
+                        })
+                        .map(|e| e.time - fight.offset),
+                };
                 // the C# code of the inverted rule only takes a loss in a successful encounter
                 let loss = loss.filter(|_| !rule.inverted || fight.success);
                 events.push(match (loss, rule.inverted) {
-                    (Some(e), false) => (e.time - fight.offset, i, true),
-                    (Some(e), true) => (e.time - fight.offset, i, false),
+                    (Some(time), false) => (time, i, true),
+                    (Some(time), true) => (time, i, false),
                     (None, false) => (fight.duration, i, !fight.success),
                     (None, true) => (fight.duration, i, true),
                 });
@@ -902,7 +926,175 @@ fn achievement_events(
     out
 }
 
-/// The hits and buff applications on active players that a data mechanic looks for.
+/// Whether a record is the loss the rule names (`Hit`, `AnyHit`, `Buff`).
+fn standard_loss(rule: &Rule, e: &evtc_ingest::CombatRecord) -> bool {
+    match rule.loss {
+        Loss::Hit(ids) => {
+            e.state_change == sc::COMBAT
+                && ids.contains(&i64::from(e.skill_id))
+                && if e.is_buff == 0 {
+                    DIRECT_HIT_RESULTS.contains(&e.result)
+                } else {
+                    BUFF_HIT_RESULTS.contains(&e.result)
+                }
+        }
+        Loss::AnyHit(ids) => e.state_change == sc::COMBAT && ids.contains(&i64::from(e.skill_id)),
+        Loss::Buff(buff) => {
+            matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+                && i64::from(e.skill_id) == buff
+        }
+        Loss::Febe | Loss::Decima => false,
+    }
+}
+
+/// The player a status record belongs to (see `owners`).
+type Owner<'a> = Box<dyn Fn(&evtc_ingest::CombatRecord) -> Option<usize> + 'a>;
+
+/// What the achievements with death and disconnect conditions need besides the records.
+struct SpecialData<'a> {
+    owner: Owner<'a>,
+}
+
+impl<'a> SpecialData<'a> {
+    fn new(kept: &'a Kept, players: &'a [Player]) -> Self {
+        Self {
+            owner: Box::new(owners(kept, players)),
+        }
+    }
+
+    fn status(
+        &self,
+        kept: &Kept,
+        players: &[Player],
+        spans: &HashMap<u64, (i64, i64)>,
+        i: usize,
+    ) -> Status {
+        let span = spans.get(&players[i].address).copied().unwrap_or((0, 0));
+        Status::of(kept, players[i].address, i, span, &self.owner)
+    }
+}
+
+/// One player in one fight for the achievements with death and disconnect conditions.
+struct Special<'a> {
+    kept: &'a Kept,
+    player: &'a Player,
+    index: usize,
+    fight: Fight,
+    owner: &'a dyn Fn(&evtc_ingest::CombatRecord) -> Option<usize>,
+    status: &'a Status,
+}
+
+impl Special<'_> {
+    fn inside(&self, time: i64) -> bool {
+        (0..=self.fight.duration).contains(&time)
+    }
+
+    /// Times (offset applied) of the status records of the player.
+    fn own(&self, state_change: u8) -> Vec<i64> {
+        self.kept
+            .events
+            .iter()
+            .filter(|e| e.state_change == state_change && (self.owner)(e) == Some(self.index))
+            .map(|e| e.time - self.fight.offset)
+            .collect()
+    }
+
+    /// Times of the records on the player of the skills: hits only, or any damage event.
+    fn damage(&self, ids: &[i64], hits_only: bool) -> Vec<i64> {
+        let redirect = |a: u64| *self.kept.agent_redirection.get(&a).unwrap_or(&a);
+        self.kept
+            .events
+            .iter()
+            .filter(|e| {
+                e.state_change == sc::COMBAT
+                    && e.dst_agent != 0
+                    && redirect(e.dst_agent) == self.player.address
+                    && ids.contains(&i64::from(e.skill_id))
+                    && (!hits_only
+                        || if e.is_buff == 0 {
+                            DIRECT_HIT_RESULTS.contains(&e.result)
+                        } else {
+                            BUFF_HIT_RESULTS.contains(&e.result)
+                        })
+            })
+            .map(|e| e.time - self.fight.offset)
+            .collect()
+    }
+
+    /// Time of the first record in the fight, if any.
+    fn first(&self, mut times: Vec<i64>) -> Option<i64> {
+        times.sort_unstable();
+        times.into_iter().find(|&t| self.inside(t))
+    }
+
+    /// Dead or disconnected at some point of the fight (`IsDead`, `IsDC` over the fight).
+    fn away(&self) -> bool {
+        let shift = |t: i64| t.saturating_sub(self.fight.offset);
+        let meets = |list: &[(i64, i64)]| {
+            list.iter()
+                .any(|&(s, e)| !(self.fight.duration < shift(s) || shift(e) < 0))
+        };
+        meets(&self.status.dead) || meets(&self.status.dc)
+    }
+
+    /// Temple of Febe, Unbounded Optimism.
+    fn febe(&self) -> Option<i64> {
+        let mut lost = self.damage(
+            &[
+                skill::WAIL_OF_DESPAIR_CM,
+                skill::WAIL_OF_DESPAIR_EMPOWERED_CM,
+                skill::POOL_OF_DESPAIR_CM,
+                skill::POOL_OF_DESPAIR_EMPOWERED_CM,
+            ],
+            true,
+        );
+        lost.extend(self.own(sc::CHANGE_DEAD));
+        lost.extend(self.own(sc::DESPAWN));
+        self.first(lost).or_else(|| self.away().then_some(0))
+    }
+
+    /// Decima, This Bug Can Dance.
+    fn decima(&self) -> Option<i64> {
+        if let Some(t) = self.first(self.damage(&[skill::FULGENT_FENCE_CM], true)) {
+            return Some(t);
+        }
+        let hurt = self.damage(
+            &[
+                skill::FLUXLANCE_FUSILLADE_CM,
+                skill::FLUXLANCE_SALVO_CM1,
+                skill::FLUXLANCE_SALVO_CM2,
+                skill::FLUXLANCE_SALVO_CM3,
+                skill::FLUXLANCE_SALVO_CM4,
+                skill::FLUXLANCE_SALVO_CM5,
+                skill::CHORUS_OF_THUNDER_CM,
+                skill::DISCORDANT_THUNDER_CM,
+                skill::HARMONIOUS_THUNDER,
+            ],
+            false,
+        );
+        let redirect = |a: u64| *self.kept.agent_redirection.get(&a).unwrap_or(&a);
+        let exposed: Vec<i64> = self
+            .kept
+            .events
+            .iter()
+            .filter(|e| {
+                matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+                    && i64::from(e.skill_id) == skill::EXPOSED_PLAYER
+                    && e.dst_agent != 0
+                    && redirect(e.dst_agent) == self.player.address
+            })
+            .map(|e| e.time - self.fight.offset)
+            .filter(|&t| hurt.iter().any(|&h| (h - t).abs() < SERVER_DELAY))
+            .collect();
+        if let Some(t) = self.first(exposed) {
+            return Some(t);
+        }
+        self.first(self.own(sc::CHANGE_DEAD))
+            .or_else(|| self.first(self.own(sc::DESPAWN)))
+            .or_else(|| self.away().then_some(0))
+    }
+}
+
 fn player_events(
     kept: &Kept,
     m: &ei_data::mechanics::Mechanic,
