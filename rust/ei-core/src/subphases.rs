@@ -1337,6 +1337,140 @@ impl Fight<'_> {
         phases
     }
 
+    /// Elemental Ai: air, fire and water between her determined phases; the last transition cast
+    /// moves the start of fire and water.
+    fn elemental_ai(&self, main: usize) -> Vec<SubPhase> {
+        /// The cast of Ai that flies her up between the elements.
+        const TRANSITION: i64 = 61_187;
+        // the dark Ai has a volatile species, so it cannot be seen in the targets
+        let mut phases = self.by_invuln(
+            &[skill::DETERMINED762],
+            main,
+            false,
+            true,
+            (0, self.duration),
+        );
+        phases.truncate(3);
+        for (i, phase) in phases.iter_mut().enumerate() {
+            self.add_target(phase, main);
+            if i > 0 {
+                let cast = self
+                    .animated_casts(&self.targets[main], TRANSITION)
+                    .into_iter()
+                    .map(|c| c.0)
+                    .rfind(|t| (phase.start..=phase.end).contains(t));
+                if let Some(cast) = cast {
+                    phase.start = cast;
+                }
+            }
+        }
+        phases
+    }
+
+    /// Keep Construct: main phases (Xera's boon is gone), burn phases (orbs compromise the
+    /// construct), the pre burn phases before its determined phases and what is left of a main
+    /// phase after a burn phase.
+    fn keep_construct(&self, main: usize) -> Vec<SubPhase> {
+        const STATUES: [i32; 8] = [
+            species::JESSICA,
+            species::OLSON,
+            species::ENGUL,
+            species::FAERLA,
+            species::CAULLE,
+            species::HENLEY,
+            species::GALLETTA,
+            species::IANIM,
+        ];
+        #[derive(Clone, Copy, PartialEq)]
+        enum Kind {
+            Main,
+            Burn,
+            Other,
+        }
+        let target = &self.targets[main];
+        let end = self.duration;
+        // (start, end, kind)
+        let mut phases: Vec<(i64, i64, Kind)> = Vec::new();
+        for (start, stop) in self.buff_free_segments(target, skill::XERAS_BOON) {
+            phases.push((start.max(0), stop.min(end), Kind::Main));
+        }
+        // the orbs: from the first stack to the first event that is not a stack
+        let mut orb_start = 0;
+        for e in self.kept.events.iter().filter(|e| {
+            i64::from(e.skill_id) == skill::COMPROMISED
+                && match e.state_change {
+                    sc::BUFF_APPLY | sc::BUFF_INITIAL => {
+                        e.dst_agent != 0 && target.addresses.contains(&self.redirect(e.dst_agent))
+                    }
+                    sc::BUFF_REMOVE_ALL | sc::BUFF_REMOVE_SINGLE => {
+                        e.src_agent != 0 && target.addresses.contains(&self.redirect(e.src_agent))
+                    }
+                    _ => false,
+                }
+        }) {
+            let time = e.time - self.offset;
+            if matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL) {
+                if orb_start == 0 {
+                    orb_start = time;
+                }
+            } else if orb_start != 0 {
+                phases.push((orb_start, time.min(end), Kind::Burn));
+                orb_start = 0;
+            }
+        }
+        phases.sort_by_key(|p| p.0);
+        // before each determined phase of the construct
+        let mut pre_burns = Vec::new();
+        for (invul_start, _) in self.buff_present_segments(target, skill::DETERMINED762) {
+            let Some(previous) = phases
+                .iter()
+                .rfind(|p| p.0 <= invul_start || p.1 <= invul_start)
+            else {
+                continue;
+            };
+            let start = if previous.1 >= invul_start {
+                previous.0
+            } else {
+                previous.1
+            } + 1;
+            if invul_start - start > PHASE_TIME_LIMIT {
+                pre_burns.push((start, invul_start, Kind::Other));
+            }
+        }
+        phases.extend(pre_burns);
+        phases.sort_by_key(|p| p.0);
+        let mut leftovers = Vec::new();
+        let mut current: Option<(i64, i64, Kind)> = None;
+        for (i, phase) in phases.iter().enumerate() {
+            match phase.2 {
+                Kind::Main => current = Some(*phase),
+                Kind::Burn => {
+                    if let Some(main_phase) = current
+                        && main_phase.1 >= phase.1 + PHASE_TIME_LIMIT
+                        && (i == phases.len() - 1 || phases[i + 1].2 == Kind::Main)
+                    {
+                        leftovers.push((phase.1, main_phase.1, Kind::Other));
+                    }
+                }
+                Kind::Other => {}
+            }
+        }
+        phases.extend(leftovers);
+        phases
+            .into_iter()
+            .map(|(start, stop, _)| {
+                let mut phase = SubPhase {
+                    start,
+                    end: stop,
+                    targets: Vec::new(),
+                };
+                self.add_target(&mut phase, main);
+                self.add_targets_of(&mut phase, &STATUES);
+                phase
+            })
+            .collect()
+    }
+
     /// Statue of Darkness: from the loss of the first invulnerability each eye has a phase
     /// whenever it is not determined.
     fn statue_of_darkness(&self) -> Vec<SubPhase> {
@@ -1805,6 +1939,8 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::KEEP_CONSTRUCT => fight.keep_construct(main),
+        species::AI_KEEPER_OF_THE_PEAK => fight.elemental_ai(main),
         species::KELA_SENESCHAL_OF_WAVES => fight.kela(main),
         species::CONJURED_AMALGAMATE => fight.conjured_amalgamate(main),
         species::NIKARE => fight.twin_largos(main, &extras.players),
