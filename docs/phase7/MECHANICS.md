@@ -30,14 +30,21 @@ Zeiten sind relativ zum Kampfbeginn, nur Ereignisse im Kampf zählen.
 | --- | ---: | --- |
 | `PlayerDstHealthDamageHitMechanic` | 592 / 669 | Treffer (direkt: normal, kritisch, Streifschuss; Buff-Schaden: Ergebnis 14 bis 18) mit der Skill-ID auf einen Spieler |
 | `PlayerDstBuffApplyMechanic` | 327 / 386 | Buff-Anwendung (auch Anfangszustand) auf einen Spieler |
+| `EnemyCastStartMechanic` | 91 | Beginn eines animierten Zaubers eines Gegners |
+| `EnemyCastEndMechanic` | 5 | Ende (Beginn + tatsächliche Dauer) eines animierten Zaubers eines Gegners |
+| `EnemyDstBuffApplyMechanic` | 84 | Buff-Anwendung (auch Anfangszustand) auf einen Gegner |
+
+Gegner sind die Ziele der Logik und die Trash-Mobs ihrer Spezies-Liste (`GetTrashMobsIDs`, schon in `ei-data/targets`). Die animierten Zauber werden wie `CombatEventFactory.CreateCastEvents` gepaart: ein Beginn mit dem nächsten Ende derselben Fertigkeit (weicht die Dauer um mehr als 10 ms von der Zeit zwischen den Datensätzen ab, zählt diese), ein Beginn ohne Ende dauert die erwartete Zeit, höchstens bis zum Beginn des nächsten Zaubers des Wirkenden plus 10 ms, ein Ende ohne Beginn nur, wenn der Zauber vor dem Log begann. Nur Logs mit den Datensätzen für Animationsbeginn und -ende (arcdps ab 2019) sind ausgewertet.
 
 Die Abklingzeit (ICD) gilt nur im HTML, nicht im JSON, und wird deshalb nicht angewendet. Die Spielerliste ist wie in C# auf aktive Spieler beschränkt.
 
-Noch ohne Auswertung, aber schon in der TSV und ohne Zusatz: `EnemyCastStart` (91), `EnemyDstBuffApply` (84), `EnemyCastEnd` (5), `PlayerSrcHit` (11), `PlayerCastStart` (10), `SpawnMechanic` (18), `SubMechanic` (27). Mit Zusatz (Lambda usw.) sind gut 500 Einträge aller Typen; sie brauchen je Mechanik Code.
+Noch ohne Auswertung, aber schon in der TSV und ohne Zusatz: `PlayerSrcHit` (11), `PlayerCastStart` (10), `SpawnMechanic` (18), `SubMechanic` (27), `EnemyDstBuffRemove` (6), `EnemyStatus` (10) und kleinere Typen. Mit Zusatz (Lambda usw.) sind gut 500 Einträge aller Typen; sie brauchen je Mechanik Code.
 
 ## Messung (103 Korpus-Logs)
 
-Encounter-Mechaniken aus Daten: 1.190 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **9 Abweichungen**, alle aus den bekannten Zeitursachen (Deimos Kampfende 6, Seelenverzehrer Kampfbeginn 3).
+Encounter-Mechaniken auf Spielern aus Daten: 1.244 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **10 Abweichungen**, alle aus den bekannten Zeitursachen (Deimos Kampfende 7, Seelenverzehrer Kampfbeginn 3).
+
+Mechaniken auf Gegnern: 174 Vergleiche der Zeiten, **1 Abweichung** (Deimos Kampfende). In 21 Fällen stimmen die Zeiten, aber nicht die Namen der Gegner: C# benennt Gegner in einzelnen Logiken um ("Empowered …", "(Permanent)", "Legendary …", "Elite …", "Godspoil Greer", "Ura, the Steamshrieker", die Klone des Elementar-Ai); diese Umbenennungen sind nicht portiert, und der Vergleich zählt sie getrennt (`mechanics (enemy names)`). Gleichnamige Ziele werden wie `NumericallyRenameSpecies` mit einer Zahl versehen.
 
 Allgemeine Mechaniken:
 
