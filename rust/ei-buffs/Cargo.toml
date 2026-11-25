@@ -1,0 +1,15 @@
+[package]
+name = "ei-buffs"
+description = "Buff stack simulation, a port of the C# BuffSimulator classes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ei-data = { path = "../ei-data" }

@@ -8,6 +8,10 @@
 //! `<dir>` holds `<TargetId>_<File>.json` as written by `GW2EIParserReference`. Exit code 0 if
 //! every compared field of every log matches.
 
+mod buffs;
+mod damage;
+mod offset;
+
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -43,19 +47,44 @@ fn main() -> ExitCode {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 struct Options {
     corpus: PathBuf,
     manifest: PathBuf,
     reference: PathBuf,
     content: Option<PathBuf>,
     verbose: bool,
+    buffs: bool,
+    damage: bool,
+    offsets: bool,
+    bench: bool,
 }
 
 fn options() -> Result<Options, Box<dyn Error>> {
     let (mut corpus, mut manifest, mut reference, mut content) = (None, None, None, None);
     let mut verbose = false;
+    let mut with_buffs = false;
+    let mut with_damage = false;
+    let mut with_offsets = false;
+    let mut with_bench = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
+        if arg == "--bench" {
+            with_bench = true;
+            continue;
+        }
+        if arg == "--offsets" {
+            with_offsets = true;
+            continue;
+        }
+        if arg == "--damage" {
+            with_damage = true;
+            continue;
+        }
+        if arg == "--buffs" {
+            with_buffs = true;
+            continue;
+        }
         if arg == "--verbose" {
             verbose = true;
             continue;
@@ -78,6 +107,10 @@ fn options() -> Result<Options, Box<dyn Error>> {
         reference: reference.ok_or("--reference is required")?,
         content,
         verbose,
+        buffs: with_buffs,
+        damage: with_damage,
+        offsets: with_offsets,
+        bench: with_bench,
     })
 }
 
@@ -89,6 +122,49 @@ struct FieldStats {
     examples: Vec<String>,
 }
 
+/// Times what the core computes per log: metadata, buffs, damage and the encounter timing.
+fn bench(opts: &Options, api: &Api, manifest: &[Entry]) {
+    use std::time::Instant;
+    let mut times: Vec<f64> = Vec::new();
+    // seconds in: metadata, buffs, damage and statistics, encounter timing
+    let mut parts = [0.0f64; 4];
+    for entry in manifest {
+        let path = opts.corpus.join(&entry.folder).join(&entry.file);
+        let Ok(data) = read_log(&path) else {
+            continue;
+        };
+        let start = Instant::now();
+        let _ = analyze(&data, api);
+        parts[0] += start.elapsed().as_secs_f64();
+        let t = Instant::now();
+        let _ = ei_core::pipeline::analyze_buffs(&data, api, None);
+        parts[1] += t.elapsed().as_secs_f64();
+        let t = Instant::now();
+        let _ = ei_core::pipeline::analyze_damage(&data, api, None);
+        parts[2] += t.elapsed().as_secs_f64();
+        let t = Instant::now();
+        let _ = ei_core::pipeline::analyze_offset(&data);
+        parts[3] += t.elapsed().as_secs_f64();
+        times.push(start.elapsed().as_secs_f64() * 1000.0);
+    }
+    println!(
+        "bench parts: metadata {:.1} s, buffs {:.1} s, damage and statistics {:.1} s, encounter {:.1} s",
+        parts[0], parts[1], parts[2], parts[3]
+    );
+    times.sort_by(f64::total_cmp);
+    let sum: f64 = times.iter().sum();
+    let at = |percent: usize| times[(times.len() - 1) * percent / 100];
+    println!(
+        "bench: {} logs, sum {:.1} s, median {:.0} ms, p90 {:.0} ms, max {:.0} ms",
+        times.len(),
+        sum / 1000.0,
+        at(50),
+        at(90),
+        at(100)
+    );
+}
+
+#[allow(clippy::too_many_lines)]
 fn run() -> Result<bool, Box<dyn Error>> {
     let opts = options()?;
     let api = match opts.content.as_deref() {
@@ -96,10 +172,20 @@ fn run() -> Result<bool, Box<dyn Error>> {
         None => Api::default(),
     };
     let manifest = read_manifest(&opts.manifest)?;
+    if opts.bench {
+        bench(&opts, &api, &manifest);
+        return Ok(true);
+    }
 
     let mut stats: BTreeMap<String, FieldStats> = BTreeMap::new();
     let mut failed_logs = 0usize;
     let mut compared_logs = 0usize;
+    let mut buff_stats: BTreeMap<i64, buffs::BuffStats> = BTreeMap::new();
+    let mut buff_failed = 0usize;
+    let mut damage_stats: BTreeMap<&'static str, damage::DamageStats> = BTreeMap::new();
+    let mut damage_failed = 0usize;
+    let mut offset_stats: BTreeMap<String, offset::OffsetStats> = BTreeMap::new();
+    let mut buff_extra: BTreeMap<i64, buffs::BuffStats> = BTreeMap::new();
 
     for entry in &manifest {
         let log_path = opts.corpus.join(&entry.folder).join(&entry.file);
@@ -108,9 +194,11 @@ fn run() -> Result<bool, Box<dyn Error>> {
             .join(format!("{}_{}.json", entry.target, entry.file));
         let label = format!("{} {}", entry.folder, entry.file);
 
-        let ours = match read_log(&log_path)
-            .map_err(|e| e.to_string())
-            .and_then(|d| analyze(&d, &api).map_err(|e| e.to_string()))
+        let data = read_log(&log_path).map_err(|e| e.to_string());
+        let ours = match data
+            .as_ref()
+            .map_err(Clone::clone)
+            .and_then(|d| analyze(d, &api).map_err(|e| e.to_string()))
         {
             Ok(a) => to_json(&a),
             Err(e) => {
@@ -122,6 +210,35 @@ fn run() -> Result<bool, Box<dyn Error>> {
         let reference: Value = serde_json::from_slice(&std::fs::read(&ref_path)?)
             .map_err(|e| format!("{}: {e}", ref_path.display()))?;
         compared_logs += 1;
+        if opts.buffs
+            && let Ok(d) = &data
+            && let Err(e) = buffs::compare_log(
+                d,
+                &api,
+                &reference,
+                &label,
+                &mut buff_stats,
+                &mut buff_extra,
+            )
+        {
+            println!("BUFF FAIL {label}: {e}");
+            buff_failed += 1;
+        }
+
+        if opts.offsets
+            && let Ok(d) = &data
+            && let Err(e) =
+                offset::compare_log(d, &reference, &entry.folder, &label, &mut offset_stats)
+        {
+            println!("OFFSET FAIL {label}: {e}");
+        }
+        if opts.damage
+            && let Ok(d) = &data
+            && let Err(e) = damage::compare_log(d, &api, &reference, &label, &mut damage_stats)
+        {
+            println!("DAMAGE FAIL {label}: {e}");
+            damage_failed += 1;
+        }
 
         for field in SHARED_FIELDS {
             record(
@@ -167,6 +284,92 @@ fn run() -> Result<bool, Box<dyn Error>> {
             for example in s.examples.iter().take(if opts.verbose { 50 } else { 3 }) {
                 println!("    {example}");
             }
+        }
+    }
+    if opts.offsets {
+        let logs: usize = offset_stats.values().map(|s| s.logs).sum();
+        let offsets: usize = offset_stats.values().map(|s| s.offset_ok).sum();
+        let durations: usize = offset_stats.values().map(|s| s.duration_ok).sum();
+        println!("encounter offsets: {offsets}/{logs} identical, durations {durations}/{logs}");
+        for (folder, s) in &offset_stats {
+            if s.offset_ok != s.logs || s.duration_ok != s.logs {
+                println!(
+                    "  {folder}: offset {}/{}, duration {}/{}",
+                    s.offset_ok, s.logs, s.duration_ok, s.logs
+                );
+                for e in &s.examples {
+                    println!("      {e}");
+                }
+            }
+        }
+        let targets: usize = offset_stats.values().map(|s| s.targets_ok).sum();
+        println!("target lists: {targets}/{logs} identical");
+        for (folder, s) in &offset_stats {
+            if s.targets_ok != s.logs {
+                println!("  {folder}: targets {}/{}", s.targets_ok, s.logs);
+                for e in &s.target_examples {
+                    println!("      {e}");
+                }
+            }
+        }
+        let breakbar: usize = offset_stats.values().map(|s| s.breakbar_ok).sum();
+        let breakbar_compared: usize = offset_stats.values().map(|s| s.breakbar_compared).sum();
+        println!("breakbar phases: {breakbar}/{breakbar_compared} logs identical");
+        for (folder, s) in &offset_stats {
+            if s.breakbar_ok != s.breakbar_compared {
+                println!(
+                    "  {folder}: breakbar phases {}/{}",
+                    s.breakbar_ok, s.breakbar_compared
+                );
+                for e in &s.breakbar_examples {
+                    println!("      {e}");
+                }
+            }
+        }
+        if offsets != logs || durations != logs {
+            all_match = false;
+        }
+    }
+    if opts.damage {
+        println!("damage: {damage_failed} logs failed");
+        for (field, s) in &damage_stats {
+            println!(
+                "  {field:<10} {:>5} compared, {:>5} mismatches",
+                s.compared, s.mismatches
+            );
+            for e in s.examples.iter().take(if opts.verbose { 5000 } else { 3 }) {
+                println!("      {e}");
+            }
+            if s.mismatches > 0 {
+                all_match = false;
+            }
+        }
+    }
+    if opts.buffs {
+        let compared: usize = buff_stats.values().map(|s| s.compared).sum();
+        let bad: usize = buff_stats.values().map(|s| s.mismatches).sum();
+        println!("buff graphs: {compared} compared, {bad} mismatches, {buff_failed} logs failed");
+        let mut worst: Vec<_> = buff_stats
+            .iter()
+            .filter(|(_, s)| s.mismatches > 0)
+            .collect();
+        worst.sort_by_key(|(_, s)| std::cmp::Reverse(s.mismatches));
+        for (id, s) in worst.iter().take(if opts.verbose { 40 } else { 12 }) {
+            println!("  buff {id}: {}/{} differ", s.mismatches, s.compared);
+            for e in s.examples.iter().take(1) {
+                println!("      {e}");
+            }
+        }
+        let extra: usize = buff_extra.values().map(|s| s.mismatches).sum();
+        println!("buffs only in the Rust simulation: {extra}");
+        for (id, s) in buff_extra.iter().take(if opts.verbose { 40 } else { 8 }) {
+            println!("  buff {id}: {} players", s.mismatches);
+            for e in s.examples.iter().take(1) {
+                println!("      {e}");
+            }
+        }
+        if bad > 0 || buff_failed > 0 || extra > 0 {
+            all_match = false;
         }
     }
     Ok(all_match)

@@ -6,7 +6,7 @@ use evtc_ingest::Evtc;
 use serde_json::{Map, Value, json};
 
 use crate::api::Api;
-use crate::keep::{KeepError, KeepSettings, keep_events};
+use crate::keep::{KeepError, KeepSettings, Kept, keep_events};
 use crate::meta::{Metadata, extract};
 use crate::players::{Player, find_players};
 
@@ -26,6 +26,10 @@ pub enum AnalysisError {
     Ingest(evtc_ingest::Error),
     /// The record filter rejected the log.
     Keep(KeepError),
+    /// A buff could not be simulated.
+    Buff(crate::buff_events::Error),
+    /// The damage of the log cannot be computed.
+    Damage(String),
 }
 
 impl fmt::Display for AnalysisError {
@@ -33,6 +37,8 @@ impl fmt::Display for AnalysisError {
         match self {
             Self::Ingest(e) => write!(f, "{e}"),
             Self::Keep(e) => write!(f, "{e}"),
+            Self::Buff(e) => write!(f, "{e}"),
+            Self::Damage(e) => write!(f, "{e}"),
         }
     }
 }
@@ -113,6 +119,339 @@ pub fn to_json(analysis: &Analysis) -> Value {
         .collect();
     o.insert("players".into(), Value::Array(players));
     Value::Object(o)
+}
+
+/// The buff simulation of every squad player.
+#[derive(Debug, Clone)]
+pub struct PlayerBuffs {
+    /// The player.
+    pub player: Player,
+    /// All simulated buffs of the player.
+    pub buffs: Vec<crate::buff_events::BuffResult>,
+}
+
+/// Simulation result of all players of a log, with the time span it covers.
+#[derive(Debug, Clone)]
+pub struct BuffAnalysis {
+    /// Start of the simulated span.
+    pub log_start: i64,
+    /// End of the simulated span.
+    pub log_end: i64,
+    /// Buffs per player.
+    pub players: Vec<PlayerBuffs>,
+}
+
+fn elementalist_kind(player: &Player) -> crate::buff_events::ElementalistKind {
+    use crate::buff_events::ElementalistKind;
+    match player.profession.as_str() {
+        "Weaver" => ElementalistKind::Weaver,
+        "Elementalist" | "Tempest" | "Catalyst" | "Evoker" => ElementalistKind::Other,
+        _ => ElementalistKind::None,
+    }
+}
+
+/// Simulates the buffs of all squad players of a log.
+///
+/// # Errors
+/// [`AnalysisError`] for unreadable logs, or a buff error as `Buff`.
+pub fn analyze_buffs(
+    data: &[u8],
+    api: &Api,
+    timing: Option<Timing>,
+) -> Result<BuffAnalysis, AnalysisError> {
+    let evtc = Evtc::parse(data)?;
+    let header = evtc.header();
+    let records: Vec<_> = evtc.events().collect();
+    let kept = keep_events(
+        &records,
+        header.trigger_id(),
+        header.build(),
+        KeepSettings::default(),
+    )?;
+    let players = find_players(evtc.agents(), &kept, &api.specs, false);
+    let timing = timing.unwrap_or_else(|| core_timing(&kept, &evtc, &players));
+    let ctx = crate::buff_events::LogContext {
+        kept: &kept,
+        gw2_build: kept.gw2_build,
+        log_start: 0,
+        time_offset: timing.offset,
+        log_end: timing.duration,
+    };
+    let mut out = Vec::with_capacity(players.len());
+    for player in players {
+        let buffs =
+            crate::buff_events::simulate_agent(&ctx, player.address, elementalist_kind(&player))
+                .map_err(AnalysisError::Buff)?;
+        out.push(PlayerBuffs { player, buffs });
+    }
+    Ok(BuffAnalysis {
+        log_start: 0,
+        log_end: ctx.log_end,
+        players: out,
+    })
+}
+
+/// The time shift and the length of the fight, in milliseconds: the time the encounter logic
+/// starts the fight at, and the time from there to its end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Timing {
+    /// Time of the records that counts as 0.
+    pub offset: i64,
+    /// Length of the fight.
+    pub duration: i64,
+}
+
+/// The timing the encounter logic determines for a log. If it cannot (a main target is missing),
+/// the offset is 0 and the fight lasts until the last record.
+fn core_timing(kept: &Kept, evtc: &Evtc<'_>, players: &[Player]) -> Timing {
+    let offset = crate::encounter::log_offset(kept, evtc.agents()).unwrap_or(0);
+    let addresses: Vec<u64> = players.iter().map(|p| p.address).collect();
+    let end = crate::encounter::log_end(kept, evtc.agents(), &addresses, offset)
+        .unwrap_or(kept.log_end_time);
+    Timing {
+        offset,
+        duration: end - offset,
+    }
+}
+
+/// Damage totals of every squad player.
+#[derive(Debug, Clone)]
+pub struct PlayerDamage {
+    /// The player.
+    pub player: Player,
+    /// Damage to foes over the whole log.
+    pub totals: crate::damage::DamageTotals,
+    /// Damage to each target of the encounter, in the order of `DamageAnalysis::targets`.
+    pub to_targets: Vec<crate::damage::DamageTotals>,
+    /// Offensive counters over all foes.
+    pub offense: crate::offense::OffensiveStats,
+    /// Offensive counters per target, in the order of `DamageAnalysis::targets`.
+    pub target_offense: Vec<crate::offense::OffensiveStats>,
+    /// Damage taken and its counters.
+    pub defense: crate::offense::DefensiveStats,
+    /// Boon strips and condition cleanses the player did.
+    pub support: crate::offense::SupportStats,
+    /// The damage graphs of the player and its minions.
+    pub graphs: PlayerGraphs,
+}
+
+/// Cumulative damage per second (see [`crate::graphs::damage_graph`]).
+#[derive(Debug, Clone, Default)]
+pub struct PlayerGraphs {
+    /// All damage to foes, minions included.
+    pub damage: Vec<i64>,
+    /// Power damage to foes, minions included.
+    pub power: Vec<i64>,
+    /// Condition damage to foes, minions included.
+    pub condition: Vec<i64>,
+    /// Damage taken.
+    pub taken: Vec<i64>,
+    /// All damage to each target, in the order of `DamageAnalysis::targets`.
+    pub targets: Vec<Vec<i64>>,
+}
+
+/// The damage of all squad players and the length of the fight.
+#[derive(Debug, Clone)]
+pub struct DamageAnalysis {
+    /// Length of the fight the damage was summed over.
+    pub duration: i64,
+    /// Damage per player.
+    pub players: Vec<PlayerDamage>,
+    /// The targets of the encounter.
+    pub targets: Vec<crate::encounter::Target>,
+}
+
+/// The graphs of one player.
+fn player_graphs(
+    ctx: &crate::buff_events::LogContext<'_>,
+    dealt: &[&evtc_ingest::CombatRecord],
+    all_events: &[&evtc_ingest::CombatRecord],
+    address: u64,
+    negated: &std::collections::HashSet<u64>,
+    targets: &[crate::encounter::Target],
+    duration: i64,
+) -> Result<PlayerGraphs, crate::damage::UnsupportedBuild> {
+    use crate::graphs::{DamageKind, Direction, damage_graph, hits};
+    let graph = |direction, kind, only_to: Option<&std::collections::HashSet<u64>>| {
+        let events = if direction == Direction::Dealt {
+            dealt
+        } else {
+            all_events
+        };
+        hits(ctx, events, address, direction, kind, negated, only_to)
+            .map(|h| damage_graph(&h, duration))
+    };
+    let mut target_graphs = Vec::with_capacity(targets.len());
+    for target in targets {
+        let set: std::collections::HashSet<u64> = target.addresses.iter().copied().collect();
+        target_graphs.push(graph(Direction::Dealt, DamageKind::All, Some(&set))?);
+    }
+    Ok(PlayerGraphs {
+        damage: graph(Direction::Dealt, DamageKind::All, None)?,
+        power: graph(Direction::Dealt, DamageKind::Power, None)?,
+        condition: graph(Direction::Dealt, DamageKind::Condition, None)?,
+        taken: graph(Direction::Taken, DamageKind::All, None)?,
+        targets: target_graphs,
+    })
+}
+/// Computes the damage of all squad players of a log.
+///
+/// # Errors
+/// [`AnalysisError`] for unreadable logs or logs of unsupported arcdps builds.
+pub fn analyze_damage(
+    data: &[u8],
+    api: &Api,
+    timing: Option<Timing>,
+) -> Result<DamageAnalysis, AnalysisError> {
+    let evtc = Evtc::parse(data)?;
+    let header = evtc.header();
+    let records: Vec<_> = evtc.events().collect();
+    let kept = keep_events(
+        &records,
+        header.trigger_id(),
+        header.build(),
+        KeepSettings::default(),
+    )?;
+    let players = find_players(evtc.agents(), &kept, &api.specs, false);
+    let timing = timing.unwrap_or_else(|| core_timing(&kept, &evtc, &players));
+    let ctx = crate::buff_events::LogContext {
+        kept: &kept,
+        gw2_build: kept.gw2_build,
+        log_start: 0,
+        time_offset: timing.offset,
+        log_end: timing.duration,
+    };
+    let species = crate::damage::barrier_negated_species(header.trigger_id());
+    let negated: std::collections::HashSet<u64> = evtc
+        .agents()
+        .iter()
+        .filter(|a| a.is_elite() == 0xFFFF_FFFF && species.contains(&a.profession()))
+        .map(|a| a.address())
+        .collect();
+    let targets = crate::encounter::log_targets(&kept, evtc.agents(), timing.offset);
+    let player_addresses: Vec<u64> = players.iter().map(|p| p.address).collect();
+    let all_events: Vec<&evtc_ingest::CombatRecord> = kept.events.iter().collect();
+    let mut out = Vec::with_capacity(players.len());
+    for player in players {
+        let dealt = crate::offense::dealt_events(&kept, player.address);
+        let totals = crate::damage::actor_damage(&ctx, &dealt, player.address, &negated, None)
+            .map_err(|e| AnalysisError::Damage(e.to_string()))?;
+        let mut to_targets = Vec::with_capacity(targets.len());
+        let mut target_offense = Vec::with_capacity(targets.len());
+        let offense = crate::offense::offensive_stats(&ctx, &dealt, player.address, &negated, None)
+            .map_err(|e| AnalysisError::Damage(e.to_string()))?;
+        let defense = crate::offense::defensive_stats(&ctx, player.address)
+            .map_err(|e| AnalysisError::Damage(e.to_string()))?;
+        let support = crate::offense::support_stats(&ctx, player.address, &player_addresses)
+            .map_err(|e| AnalysisError::Damage(e.to_string()))?;
+        for target in &targets {
+            let addresses: std::collections::HashSet<u64> =
+                target.addresses.iter().copied().collect();
+            target_offense.push(
+                crate::offense::offensive_stats(
+                    &ctx,
+                    &dealt,
+                    player.address,
+                    &negated,
+                    Some(&addresses),
+                )
+                .map_err(|e| AnalysisError::Damage(e.to_string()))?,
+            );
+            to_targets.push(
+                crate::damage::actor_damage(
+                    &ctx,
+                    &dealt,
+                    player.address,
+                    &negated,
+                    Some(&addresses),
+                )
+                .map_err(|e| AnalysisError::Damage(e.to_string()))?,
+            );
+        }
+        let graphs = player_graphs(
+            &ctx,
+            &dealt,
+            &all_events,
+            player.address,
+            &negated,
+            &targets,
+            timing.duration,
+        )
+        .map_err(|e| AnalysisError::Damage(e.to_string()))?;
+        out.push(PlayerDamage {
+            player,
+            totals,
+            to_targets,
+            offense,
+            target_offense,
+            defense,
+            support,
+            graphs,
+        });
+    }
+    Ok(DamageAnalysis {
+        duration: timing.duration,
+        players: out,
+        targets,
+    })
+}
+
+/// The encounter offset the core determines for a log and the end of the log.
+#[derive(Debug, Clone)]
+pub struct OffsetAnalysis {
+    /// `GetLogOffset` of the encounter, or `None` if the main target is not in the log.
+    pub offset: Option<i64>,
+    /// Time of the last record (before the offset is subtracted).
+    pub log_end: i64,
+    /// End of the fight as the encounter logic determines it (before the offset is subtracted).
+    pub fight_end: Option<i64>,
+    /// Trigger id of the log.
+    pub trigger_id: u16,
+    /// Targets of the encounter with the offset applied (only species with a positive id).
+    pub targets: Vec<crate::encounter::Target>,
+    /// The breakbar phases of the targets, with times relative to the start of the fight.
+    pub breakbar_phases: Vec<crate::phases::BreakbarPhase>,
+}
+
+/// Determines the encounter offset of a log.
+///
+/// # Errors
+/// [`AnalysisError`] for unreadable logs.
+pub fn analyze_offset(data: &[u8]) -> Result<OffsetAnalysis, AnalysisError> {
+    let evtc = Evtc::parse(data)?;
+    let header = evtc.header();
+    let records: Vec<_> = evtc.events().collect();
+    let kept = keep_events(
+        &records,
+        header.trigger_id(),
+        header.build(),
+        KeepSettings::default(),
+    )?;
+    let players = find_players(
+        evtc.agents(),
+        &kept,
+        &crate::spec::SpecList::default(),
+        false,
+    );
+    let addresses: Vec<u64> = players.iter().map(|p| p.address).collect();
+    let offset = crate::encounter::log_offset(&kept, evtc.agents()).ok();
+    let fight_end =
+        crate::encounter::log_end(&kept, evtc.agents(), &addresses, offset.unwrap_or(0)).ok();
+    let targets = crate::encounter::log_targets(&kept, evtc.agents(), offset.unwrap_or(0));
+    let duration = fight_end.map_or(kept.log_end_time, |e| e - offset.unwrap_or(0));
+    Ok(OffsetAnalysis {
+        offset,
+        fight_end,
+        log_end: kept.log_end_time,
+        trigger_id: kept.trigger_id,
+        breakbar_phases: crate::phases::breakbar_phases(
+            &kept,
+            &targets,
+            offset.unwrap_or(0),
+            duration,
+        ),
+        targets,
+    })
 }
 
 #[cfg(test)]

@@ -164,6 +164,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ei-buffs"
+version = "0.1.0"
+dependencies = [
+ "ei-data",
+]
+
+[[package]]
 name = "ei-cli"
 version = "0.1.0"
 dependencies = [
@@ -176,6 +183,8 @@ dependencies = [
 name = "ei-core"
 version = "0.1.0"
 dependencies = [
+ "ei-buffs",
+ "ei-data",
  "evtc-ingest",
  "proptest",
  "serde",
@@ -183,10 +192,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ei-data"
+version = "0.1.0"
+
+[[package]]
 name = "ei-parity"
 version = "0.1.0"
 dependencies = [
  "ei-core",
+ "ei-data",
  "evtc-ingest",
  "serde_json",
 ]
