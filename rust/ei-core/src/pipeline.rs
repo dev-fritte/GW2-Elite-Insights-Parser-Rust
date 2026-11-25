@@ -259,6 +259,10 @@ pub struct DamageAnalysis {
     pub players: Vec<PlayerDamage>,
     /// The targets of the encounter.
     pub targets: Vec<crate::encounter::Target>,
+    /// The mechanics every encounter has.
+    pub mechanics: Vec<crate::mechanics::MechanicRow>,
+    /// The players the mechanics refer to.
+    pub mechanic_players: Vec<Player>,
 }
 
 /// The graphs of one player.
@@ -331,6 +335,9 @@ pub fn analyze_damage(
     let targets = crate::encounter::log_targets(&kept, evtc.agents(), timing.offset);
     let player_addresses: Vec<u64> = players.iter().map(|p| p.address).collect();
     let all_events: Vec<&evtc_ingest::CombatRecord> = kept.events.iter().collect();
+    let mechanics =
+        crate::mechanics::base_mechanics(&kept, &players, timing.offset, timing.duration);
+    let mechanic_players = players.clone();
     let mut out = Vec::with_capacity(players.len());
     for player in players {
         let dealt = crate::offense::dealt_events(&kept, player.address);
@@ -393,6 +400,8 @@ pub fn analyze_damage(
         duration: timing.duration,
         players: out,
         targets,
+        mechanics,
+        mechanic_players,
     })
 }
 

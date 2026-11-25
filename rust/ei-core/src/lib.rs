@@ -10,6 +10,7 @@ pub mod damage;
 pub mod encounter;
 pub mod graphs;
 pub mod keep;
+pub mod mechanics;
 pub mod meta;
 pub mod model;
 pub mod offense;

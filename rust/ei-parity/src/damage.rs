@@ -30,6 +30,7 @@ pub fn compare_log(
     let timing = crate::buffs::reference_timing(reference);
     let analysis = analyze_damage(data, api, timing).map_err(|e| e.to_string())?;
     let duration = analysis.duration;
+    compare_mechanics(&analysis, reference, label, stats);
     let players = &analysis.players;
     let theirs_all = reference
         .get("players")
@@ -544,5 +545,70 @@ fn compare_graphs(
             .and_then(|v| v.get(0));
         let note = || format!("{} target {index}", note());
         check_graph(stats, "graph target", graph, reference, &note);
+    }
+}
+
+/// Compares the mechanics every encounter has: for each of them the sorted times and players.
+fn compare_mechanics(
+    analysis: &ei_core::pipeline::DamageAnalysis,
+    reference: &Value,
+    label: &str,
+    stats: &mut BTreeMap<&'static str, DamageStats>,
+) {
+    const NAMES: [&str; 12] = [
+        "Dead",
+        "Downed",
+        "Got up",
+        "DC",
+        "Resp",
+        "Res",
+        "Knck.Dwn",
+        "Knck.Pll",
+        "Flt",
+        "Lnch",
+        "Lckt",
+        "Wtr.Flt.Snk",
+    ];
+    let theirs_all = reference
+        .get("mechanics")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for name in NAMES {
+        let mut expected: Vec<(i64, String)> = theirs_all
+            .iter()
+            .filter(|m| m.get("name").and_then(Value::as_str) == Some(name))
+            .flat_map(|m| {
+                m.get("mechanicsData")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default()
+            })
+            .filter_map(|x| {
+                Some((
+                    x.get("time")?.as_i64()?,
+                    x.get("actor")?.as_str()?.to_owned(),
+                ))
+            })
+            .collect();
+        let mut ours: Vec<(i64, String)> = analysis
+            .mechanics
+            .iter()
+            .filter(|m| m.name == name)
+            .flat_map(|m| m.events.iter())
+            .map(|&(time, player)| (time, analysis.mechanic_players[player].character.clone()))
+            .collect();
+        expected.sort();
+        ours.sort();
+        let s = stats.entry("mechanics (generic)").or_default();
+        s.compared += 1;
+        if ours != expected {
+            s.mismatches += 1;
+            if s.examples.len() < 50 {
+                s.examples.push(format!(
+                    "{label} {name}: rust {ours:?} reference {expected:?}"
+                ));
+            }
+        }
     }
 }
