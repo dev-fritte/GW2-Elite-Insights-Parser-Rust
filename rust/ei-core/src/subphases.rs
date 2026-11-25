@@ -1231,6 +1231,7 @@ impl Fight<'_> {
     }
 
     /// Kela: storm phases (she is burrowed) between the main phases.
+    #[allow(clippy::too_many_lines)]
     fn kela(&self, main: usize) -> Vec<SubPhase> {
         let casts = self.animated_casts_of(&self.targets[main], &[]);
         let burrow_or_ambush: Vec<i64> = casts
@@ -1320,7 +1321,7 @@ impl Fight<'_> {
             phases.push(phase);
         }
         for &(start, end) in &mains {
-            let middle = (start + end) / 2;
+            let middle = i64::midpoint(start, end);
             if storms.iter().any(|s| (s.0..=s.1).contains(&middle)) {
                 continue;
             }
