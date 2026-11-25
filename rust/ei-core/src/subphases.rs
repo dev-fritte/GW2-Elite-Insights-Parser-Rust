@@ -124,6 +124,7 @@ impl Fight<'_> {
         ids: &[i64],
         target: &Target,
         begin_with_apply: bool,
+        gap: i64,
     ) -> Vec<(i64, bool)> {
         let mut all: Vec<(i64, bool)> = Vec::new();
         for &id in ids {
@@ -155,7 +156,7 @@ impl Fight<'_> {
                 if need_start && apply {
                     need_start = false;
                     if let Some(&(prev, _)) = filtered.last()
-                        && time - prev < SERVER_DELAY
+                        && time - prev < gap
                     {
                         filtered.pop();
                         continue;
@@ -187,7 +188,14 @@ impl Fight<'_> {
         begin_with_start: bool,
         range: (i64, i64),
     ) -> Vec<SubPhase> {
-        self.by_invuln_filtered(ids, target_index, add_skip, begin_with_start, range, true)
+        self.by_invuln_filtered(
+            ids,
+            target_index,
+            add_skip,
+            begin_with_start,
+            range,
+            (true, SERVER_DELAY),
+        )
     }
 
     /// `GetSubPhasesByInvul`; `filter_small` drops the phases of 100 ms or less.
@@ -198,9 +206,9 @@ impl Fight<'_> {
         add_skip: bool,
         begin_with_start: bool,
         (start, end): (i64, i64),
-        filter_small: bool,
+        (filter_small, gap): (bool, i64),
     ) -> Vec<SubPhase> {
-        let sequence = self.invuln_sequence(ids, &self.targets[target_index], begin_with_start);
+        let sequence = self.invuln_sequence(ids, &self.targets[target_index], begin_with_start, gap);
         let mut last = start;
         let mut phases: Vec<SubPhase> = Vec::new();
         let new = |s: i64, e: i64| SubPhase {
@@ -1114,7 +1122,7 @@ impl Fight<'_> {
             .map(|e| (e.time - self.offset, e.state_change))
             .collect();
         states.extend(
-            self.invuln_sequence(&[skill::DETERMINED762], target, true)
+            self.invuln_sequence(&[skill::DETERMINED762], target, true, SERVER_DELAY)
                 .into_iter()
                 .filter(|s| s.1)
                 .map(|s| (s.0, sc::BUFF_APPLY)),
@@ -1261,7 +1269,7 @@ impl Fight<'_> {
             true,
             true,
             (0, self.duration),
-            false,
+            (false, SERVER_DELAY),
         );
         let mut mains: Vec<(i64, i64)> = Vec::new();
         let mut candidate_storms: Vec<(i64, i64)> = Vec::new();
@@ -1469,6 +1477,22 @@ impl Fight<'_> {
                 phase
             })
             .collect()
+    }
+
+    /// Nexus of Eternity: the fight splits whenever Vloxx has damage immunity.
+    fn nexus(&self, main: usize) -> Vec<SubPhase> {
+        let mut phases = self.by_invuln_filtered(
+            &[skill::DAMAGE_IMMUNITY],
+            main,
+            true,
+            true,
+            (0, self.duration),
+            (true, 4000),
+        );
+        for phase in &mut phases {
+            self.add_target(phase, main);
+        }
+        phases
     }
 
     /// Statue of Darkness: from the loss of the first invulnerability each eye has a phase
@@ -1939,6 +1963,7 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::VLOXX => fight.nexus(main),
         species::KEEP_CONSTRUCT => fight.keep_construct(main),
         species::AI_KEEPER_OF_THE_PEAK => fight.elemental_ai(main),
         species::KELA_SENESCHAL_OF_WAVES => fight.kela(main),
