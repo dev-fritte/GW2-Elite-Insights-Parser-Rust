@@ -15,22 +15,25 @@ Die allgemeinen Mechaniken, die jedes Log hat (`LogLogic`-Konstruktor):
 | Name | Quelle |
 | --- | --- |
 | `Dead`, `Downed`, `Got up` | Statuswechsel Tod, Niedergang, Aufstehen der Spieler |
-| `DC`, `Resp` | Despawn und Spawn der Spieler |
+| `DC`, `Resp` | Despawn und Spawn der Spieler; Datensätze ohne Adresse, aber mit Instanz-ID, gehören dem Spieler mit dieser ID, der um die Zeit bekannt ist (`orphanedSrcInstidCombatItems`) |
 | `Res` | Beginn der Animation des Wiederbelebens (Skill 1066); eine Animation, die in derselben Millisekunde endet, zählt nicht |
+| `Miss.Qck`, `Miss.Alac` | Buff-Anwendungen (Schnelligkeit, Tempo) der Gruppe: je Geber der Untergruppe die Folgen innerhalb von 15 ms; wer fehlt, obwohl er lebt und verbunden ist, bekommt den Eintrag. Quickness: Lively-Lute-Wellen innerhalb von 1.100 ms nach dem Zauberbeginn zählen als eine Folge (auch ein Zauber, der vor dem Log begann, nur mit Ende-Datensatz). Nur Spieler, die am Kampf teilnahmen (Schaden, Schaden erlitten oder Buff an andere); die anderen fehlen in der Spielerliste von C# |
 | `Knck.Dwn`, `Knck.Pll`, `Flt`, `Lnch`, `Lckt`, `Wtr.Flt.Snk` | Crowd Control (Ergebnis 12) auf Spieler, nach dem generischen arcdps-Skill |
 
 Zeiten sind relativ zum Kampfbeginn, nur Ereignisse im Kampf zählen.
 
 ## Messung (103 Korpus-Logs)
 
-12 Mechaniken je Log, 1.236 Vergleiche (sortierte Liste aus Zeit und Spieler), **16 Abweichungen**:
+14 Mechaniken je Log, 1.442 Vergleiche (sortierte Liste aus Zeit und Spieler), **17 Abweichungen**:
 
-- **Bekannte Ursachen anderswo:** Deimos (Kampfende), Drachenleere (Kampfende), Seelenverzehrer (Kampfbeginn 1 s) mit zusammen 8.
-- **DC:** 3 Logs (Arkk, Kela, McLeod): C# erzeugt dort zusätzliche, künstliche Despawn-Ereignisse in der Statusverwaltung der Spieler (`PlayerActorStatusHelper`), die der Core nicht nachbildet.
+- **Bekannte Ursachen anderswo:** Deimos (Kampfende), Drachenleere (Kampfende) und Seelenverzehrer (Kampfbeginn 1 s) mit zusammen 14.
 - **Lckt:** 3 Logs (Faultierion, Matthias zweimal): C# lässt einzelne Sperr-Ereignisse weg (bei Matthias genau die der geopferten Spieler, mit Quelle gleich Ziel und Dauer 10 s), die Regel dafür ist nicht gefunden. Quelle gleich Ziel allein ist es nicht (Fraenir hat solche Ereignisse, die zählen).
+
+Die früheren DC-Abweichungen (Arkk, Kela, McLeod) waren keine künstlichen Ereignisse: es sind Despawn-Datensätze ohne Adresse, die C# über die Instanz-ID zuordnet.
+
+Nicht nachgebildet: die Reihenfolge der Spielerliste von C# (nach Untergruppe, innerhalb der Gruppe nach Agentenreihenfolge, nicht nach Namen); sie wirkt nur bei Spielern mit nicht überlappenden Anwesenheitszeiten.
 
 ## Nicht portiert
 
-- `Miss.Qck` und `Miss.Alac` (`PlayerMissedBuffApplyEvent`, prüft die Subgruppen-Anbieter) kommen in fast jedem Log vor und brauchen die Buff-Verläufe der Gruppe.
 - Alle encounterspezifischen Mechaniken (rund 1.100 Definitionen in 87 Logiken).
 - Untermechaniken (Stabilität), Gewichte, interne Abklingzeiten, Zeitbegrenzer.

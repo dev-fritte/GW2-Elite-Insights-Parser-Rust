@@ -57,7 +57,7 @@ impl Agent {
 }
 
 /// First and last time of every agent address in the kept records (`UpdateAgentData`).
-fn spans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
+pub(crate) fn spans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
     let mut spans: HashMap<u64, (i64, i64)> = HashMap::new();
     let mut touch = |address: u64, time: i64| {

@@ -1,5 +1,6 @@
 //! Mechanics (`EIData/Mechanics`): the ones every encounter has (`LogLogic` constructor): the
-//! status changes of the players and their resurrection casts.
+//! status changes of the players, their resurrection casts and the missed quickness and alacrity
+//! applications.
 //!
 //! The mechanics of the single encounters are not ported.
 
@@ -7,6 +8,12 @@ use crate::generated::state_change as sc;
 use crate::keep::Kept;
 use crate::players::Player;
 use ei_data::skill_ids as skill;
+use std::collections::HashMap;
+
+/// `ParserHelper.BuffSimulatorDelayConstant`.
+const BUFF_SIMULATOR_DELAY: i64 = 15;
+/// Time after the start of a Lively Lute cast in which its quickness waves count as one.
+const LUTE_WINDOW: i64 = 1100;
 
 /// `DamageResult.CrowdControl` of the result enum.
 const CROWD_CONTROL_RESULT: u8 = 12;
@@ -57,6 +64,7 @@ pub fn base_mechanics(
 ) -> Vec<MechanicRow> {
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
     let index_of = |address: u64| players.iter().position(|p| p.address == redirect(address));
+    let owner = owners(kept, players);
     let mut rows: Vec<MechanicRow> = [
         ("Dead", sc::CHANGE_DEAD),
         ("Downed", sc::CHANGE_DOWN),
@@ -69,8 +77,8 @@ pub fn base_mechanics(
         let events = kept
             .events
             .iter()
-            .filter(|e| e.state_change == state && e.src_agent != 0)
-            .filter_map(|e| Some((e.time - offset, index_of(e.src_agent)?)))
+            .filter(|e| e.state_change == state)
+            .filter_map(|e| Some((e.time - offset, owner(e)?)))
             .filter(|(time, _)| (0..=duration).contains(time))
             .collect();
         MechanicRow { name, events }
@@ -122,6 +130,388 @@ pub fn base_mechanics(
             .collect();
         rows.push(MechanicRow { name, events });
     }
+    rows.extend(missed_buffs(kept, players, offset, duration));
     rows.retain(|r| !r.events.is_empty());
+    rows
+}
+
+/// Finds the player a status record belongs to. Records without an agent address but with an
+/// instance id (the despawns of this arcdps build) go to the player with that instance id who is
+/// known around that time (`orphanedSrcInstidCombatItems` of `CompleteAgentsAndLogData`).
+fn owners<'a>(
+    kept: &'a Kept,
+    players: &'a [Player],
+) -> impl Fn(&evtc_ingest::CombatRecord) -> Option<usize> + 'a {
+    let redirect = move |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    // per player: instance id and first and last time in the records
+    let mut known: Vec<(u16, i64, i64)> = vec![(0, i64::MAX, i64::MIN); players.len()];
+    for e in &kept.events {
+        for (is_agent, address, instid) in [
+            (
+                crate::rules::src_is_agent(e.state_change),
+                e.src_agent,
+                e.src_instid,
+            ),
+            (
+                crate::rules::dst_is_agent(e.state_change),
+                e.dst_agent,
+                e.dst_instid,
+            ),
+        ] {
+            if is_agent
+                && address != 0
+                && let Some(i) = players.iter().position(|p| p.address == redirect(address))
+            {
+                if known[i].0 == 0 {
+                    known[i].0 = instid;
+                }
+                known[i].1 = known[i].1.min(e.time);
+                known[i].2 = known[i].2.max(e.time);
+            }
+        }
+    }
+    move |e| {
+        if e.src_agent != 0 {
+            return players
+                .iter()
+                .position(|p| p.address == redirect(e.src_agent));
+        }
+        if e.src_instid == 0 {
+            return None;
+        }
+        let t = e.time;
+        known.iter().position(|&(instid, first, last)| {
+            instid == e.src_instid
+                && ((first..=last).contains(&(t - 300)) || (first..=last).contains(&(t + 300)))
+        })
+    }
+}
+
+/// Dead and disconnected time segments of a player (`SingleActor.GetStatus`, without the
+/// synthetic despawns of `PlayerActorStatusHelper`).
+struct Status {
+    dead: Vec<(i64, i64)>,
+    dc: Vec<(i64, i64)>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum StatusKind {
+    Down,
+    Dead,
+    Despawn,
+    Other,
+}
+
+impl Status {
+    fn of(
+        kept: &Kept,
+        address: u64,
+        player: usize,
+        span: (i64, i64),
+        owner: &dyn Fn(&evtc_ingest::CombatRecord) -> Option<usize>,
+    ) -> Self {
+        let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+        let (first, last) = span;
+        let mut status: Vec<(i64, StatusKind)> = kept
+            .events
+            .iter()
+            .filter(|e| owner(e) == Some(player))
+            .filter_map(|e| match e.state_change {
+                sc::CHANGE_DOWN => Some((e.time, StatusKind::Down)),
+                sc::CHANGE_DEAD => Some((e.time, StatusKind::Dead)),
+                sc::DESPAWN => Some((e.time, StatusKind::Despawn)),
+                sc::CHANGE_UP | sc::SPAWN => Some((e.time, StatusKind::Other)),
+                _ => None,
+            })
+            .collect();
+        status.sort_by_key(|s| s.0);
+        // a despawn followed by movement, damage, a cast or a buff is no disconnect: the player
+        // is back at that moment (`PlayerActorStatusHelper`)
+        let activity: Vec<i64> = kept
+            .events
+            .iter()
+            .filter(|e| match e.state_change {
+                sc::POSITION | sc::VELOCITY | sc::ROTATION | sc::ANIMATION_START => {
+                    e.src_agent != 0 && redirect(e.src_agent) == address
+                }
+                sc::BUFF_APPLY => e.dst_agent != 0 && redirect(e.dst_agent) == address,
+                sc::COMBAT => {
+                    e.src_agent != 0
+                        && redirect(e.src_agent) == address
+                        && if e.is_buff == 0 {
+                            crate::damage::is_direct_hit(e.result)
+                        } else {
+                            crate::damage::is_buff_hit(e.result)
+                        }
+                }
+                _ => false,
+            })
+            .map(|e| e.time)
+            .collect();
+        let mut returns = Vec::new();
+        for (i, &(time, kind)) in status.iter().enumerate() {
+            if kind != StatusKind::Despawn {
+                continue;
+            }
+            let next = status.get(i + 1).map_or(last, |n| n.0);
+            if let Some(back) = activity
+                .iter()
+                .copied()
+                .filter(|&t| t > time + 50 && t < next)
+                .min()
+            {
+                returns.push((back, StatusKind::Other));
+            }
+        }
+        status.extend(returns);
+        status.sort_by_key(|s| s.0);
+        let mut dead = Vec::new();
+        let mut dc = Vec::new();
+        let add = |list: &mut Vec<(i64, i64)>, start: i64, end: i64| {
+            if start < end {
+                list.push((start, end));
+            }
+        };
+        add(&mut dc, i64::MIN, first);
+        if status.is_empty() {
+            add(&mut dc, last, i64::MAX);
+            return Self { dead, dc };
+        }
+        for (i, &(time, kind)) in status.iter().enumerate() {
+            let next = status.get(i + 1).map_or(last, |n| n.0);
+            match kind {
+                StatusKind::Dead => add(&mut dead, time, next),
+                StatusKind::Despawn => add(&mut dc, time, next),
+                StatusKind::Down => {}
+                StatusKind::Other => {
+                    if i == 0 && time - first > 50 {
+                        add(&mut dc, first, time);
+                    }
+                }
+            }
+        }
+        if let Some(&(_, kind)) = status.last() {
+            if kind == StatusKind::Dead {
+                add(&mut dead, last, i64::MAX);
+            } else {
+                add(&mut dc, last, i64::MAX);
+            }
+        }
+        Self { dead, dc }
+    }
+
+    fn dead_or_dc(&self, time: i64) -> bool {
+        let inside = |list: &[(i64, i64)]| list.iter().any(|&(s, e)| s <= time && time <= e);
+        inside(&self.dead) || inside(&self.dc)
+    }
+}
+
+/// Starts of the Lively Lute casts per caster (index into the players). A cast that began before
+/// the log and only has its end record starts that much earlier than the end.
+fn lute_casts(kept: &Kept, index_of: &dyn Fn(u64) -> Option<usize>) -> HashMap<usize, Vec<i64>> {
+    let mut lute: HashMap<usize, Vec<i64>> = HashMap::new();
+    let mut open: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    for (i, e) in kept.events.iter().enumerate() {
+        if i64::from(e.skill_id) != skill::LIVELY_LUTE || e.src_agent == 0 {
+            continue;
+        }
+        let Some(caster) = index_of(e.src_agent) else {
+            continue;
+        };
+        match e.state_change {
+            sc::ANIMATION_START => {
+                let instant = kept.events[i + 1..]
+                    .iter()
+                    .find(|n| {
+                        n.src_agent == e.src_agent
+                            && n.skill_id == e.skill_id
+                            && matches!(n.state_change, sc::ANIMATION_START | sc::ANIMATION_STOP)
+                    })
+                    .is_some_and(|n| n.state_change == sc::ANIMATION_STOP && n.time == e.time);
+                open.insert(e.src_agent);
+                if !instant {
+                    lute.entry(caster).or_default().push(e.time);
+                }
+            }
+            sc::ANIMATION_STOP if !open.remove(&e.src_agent) => {
+                let start = e.time - i64::from(e.value);
+                if start < 0 && e.value > 1 {
+                    lute.entry(caster).or_default().push(start);
+                }
+            }
+            _ => {}
+        }
+    }
+    lute
+}
+
+/// Applications of one giver to the group, packed by `BuffSimulatorDelayConstant`: time of the
+/// first one and the receivers.
+type Sequence = (i64, Vec<usize>);
+
+/// Merges the sequences that start inside a Lively Lute cast window into the first of them.
+fn merge_lute_waves(groups: &mut Vec<Sequence>, casts: &[i64]) {
+    for &cast in casts {
+        let keys: Vec<i64> = groups
+            .iter()
+            .map(|g| g.0)
+            .filter(|&t| t >= cast && t <= cast + LUTE_WINDOW)
+            .collect();
+        if keys.len() > 1 {
+            let mut merged = Vec::new();
+            for key in &keys[1..] {
+                if let Some(pos) = groups.iter().position(|g| g.0 == *key) {
+                    merged.extend(groups.remove(pos).1);
+                }
+            }
+            if let Some(first) = groups.iter_mut().find(|g| g.0 == keys[0]) {
+                first.1.extend(merged);
+            }
+        }
+    }
+}
+
+/// The players that took part in the fight (`ParsedEvtcLog`: hit or were hit by something not
+/// friendly, or gave a buff to someone else); the others are left out of the player list.
+fn active_players(kept: &Kept, players: &[Player], spans: &HashMap<u64, (i64, i64)>) -> Vec<bool> {
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    let present: Vec<bool> = players
+        .iter()
+        .map(|p| spans.get(&p.address).is_none_or(|s| s.1 > 0))
+        .collect();
+    let mut active = vec![false; players.len()];
+    let index = |address: u64| players.iter().position(|p| p.address == redirect(address));
+    for e in &kept.events {
+        if e.src_agent == 0 && e.dst_agent == 0 {
+            continue;
+        }
+        let participates = match e.state_change {
+            sc::COMBAT => {
+                e.iff != 0
+                    && if e.is_buff == 0 {
+                        crate::damage::is_direct_hit(e.result)
+                    } else {
+                        crate::damage::is_buff_hit(e.result)
+                    }
+            }
+            _ => false,
+        };
+        if participates {
+            for address in [e.src_agent, e.dst_agent] {
+                if let Some(i) = index(address) {
+                    active[i] = true;
+                }
+            }
+        } else if e.state_change == sc::BUFF_APPLY
+            && let (Some(giver), dst) = (index(e.src_agent), index(e.dst_agent))
+            && dst != Some(giver)
+        {
+            active[giver] = true;
+        }
+    }
+    for (a, p) in active.iter_mut().zip(present) {
+        *a &= p;
+    }
+    active
+}
+
+/// `Miss.Qck` and `Miss.Alac` (`PlayerMissedBuffApplyEvent`): a subgroup member that did not get
+/// a quickness or alacrity application its group mates got from the same giver at the same time.
+fn missed_buffs(kept: &Kept, players: &[Player], offset: i64, duration: i64) -> Vec<MechanicRow> {
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    let spans = crate::encounter::spans(kept);
+    let span_of = |i: usize| spans.get(&players[i].address).copied().unwrap_or((0, 0));
+    let owner = owners(kept, players);
+    let active = active_players(kept, players, &spans);
+    let index_of = |address: u64| {
+        players
+            .iter()
+            .position(|p| p.address == redirect(address))
+            .filter(|&i| active[i])
+    };
+    let statuses: Vec<Status> = (0..players.len())
+        .map(|i| Status::of(kept, players[i].address, i, span_of(i), &owner))
+        .collect();
+    let overlap = |a: usize, b: usize| {
+        let (a, b) = (span_of(a), span_of(b));
+        a.0 <= b.1 && a.1 >= b.0
+    };
+    let lute = lute_casts(kept, &index_of);
+    let mut rows = Vec::new();
+    for (name, buff) in [
+        ("Miss.Qck", skill::QUICKNESS),
+        ("Miss.Alac", skill::ALACRITY),
+    ] {
+        // every application: (time, giver, receiver)
+        let mut applies: Vec<(i64, usize, usize)> = kept
+            .events
+            .iter()
+            .filter(|e| {
+                e.state_change == sc::BUFF_APPLY
+                    && i64::from(e.skill_id) == buff
+                    && e.src_agent != 0
+                    && e.dst_agent != 0
+            })
+            .filter_map(|e| Some((e.time, index_of(e.src_agent)?, index_of(e.dst_agent)?)))
+            .collect();
+        applies.sort_by_key(|a| a.0);
+        // C# computes the list for a whole group of players at once and the first player of the
+        // group to ask decides; later ones overwrite it for everybody in their window
+        let mut cache: Vec<Option<Vec<i64>>> = vec![None; players.len()];
+        let mut events = Vec::new();
+        for p in (0..players.len()).filter(|&p| active[p]) {
+            if cache[p].is_none() {
+                let same_group: Vec<usize> = (0..players.len())
+                    .filter(|&q| active[q] && players[q].group == players[p].group && overlap(p, q))
+                    .collect();
+                let mut givers: Vec<usize> = Vec::new();
+                for &(_, giver, _) in &applies {
+                    if players[giver].group == players[p].group && !givers.contains(&giver) {
+                        givers.push(giver);
+                    }
+                }
+                let mut sequences: Vec<Vec<Sequence>> = Vec::new();
+                for giver in givers {
+                    let mut groups: Vec<Sequence> = Vec::new();
+                    let mut block_end = i64::MIN;
+                    for a in applies
+                        .iter()
+                        .filter(|a| a.1 == giver && same_group.contains(&a.2))
+                    {
+                        if a.0 >= block_end {
+                            groups.push((a.0, Vec::new()));
+                            block_end = a.0 + BUFF_SIMULATOR_DELAY;
+                        }
+                        if let Some(g) = groups.last_mut() {
+                            g.1.push(a.2);
+                        }
+                    }
+                    if groups.iter().all(|g| g.1.len() <= 1) {
+                        continue;
+                    }
+                    if buff == skill::QUICKNESS
+                        && let Some(casts) = lute.get(&giver)
+                    {
+                        merge_lute_waves(&mut groups, casts);
+                    }
+                    sequences.push(groups);
+                }
+                for &q in &same_group {
+                    let missed = sequences
+                        .iter()
+                        .flatten()
+                        .filter(|(time, dsts)| !dsts.contains(&q) && !statuses[q].dead_or_dc(*time))
+                        .map(|(time, _)| *time)
+                        .collect();
+                    cache[q] = Some(missed);
+                }
+            }
+            for &time in cache[p].as_deref().unwrap_or(&[]) {
+                events.push((time - offset, p));
+            }
+        }
+        events.retain(|(time, _)| (0..=duration).contains(time));
+        rows.push(MechanicRow { name, events });
+    }
     rows
 }

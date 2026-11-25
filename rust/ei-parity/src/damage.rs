@@ -555,7 +555,7 @@ fn compare_mechanics(
     label: &str,
     stats: &mut BTreeMap<&'static str, DamageStats>,
 ) {
-    const NAMES: [&str; 12] = [
+    const NAMES: [&str; 14] = [
         "Dead",
         "Downed",
         "Got up",
@@ -568,6 +568,8 @@ fn compare_mechanics(
         "Lnch",
         "Lckt",
         "Wtr.Flt.Snk",
+        "Miss.Qck",
+        "Miss.Alac",
     ];
     let theirs_all = reference
         .get("mechanics")
