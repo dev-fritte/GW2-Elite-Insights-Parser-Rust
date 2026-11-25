@@ -754,6 +754,87 @@ impl Fight<'_> {
         phases
     }
 
+    /// The times a target gains (`apply`) or loses all of (`!apply`) a buff, in order.
+    fn buff_times_on(&self, target: &Target, buff: i64, apply: bool) -> Vec<i64> {
+        self.kept
+            .events
+            .iter()
+            .filter(|e| i64::from(e.skill_id) == buff)
+            .filter(|e| {
+                if apply {
+                    e.state_change == sc::BUFF_APPLY
+                        && e.dst_agent != 0
+                        && target.addresses.contains(&self.redirect(e.dst_agent))
+                } else {
+                    e.state_change == sc::BUFF_REMOVE_ALL
+                        && e.src_agent != 0
+                        && target.addresses.contains(&self.redirect(e.src_agent))
+                }
+            })
+            .map(|e| e.time - self.offset)
+            .collect()
+    }
+
+    /// Fraenir of Jormag: his first and last part of the fight and the icebrood construct in between.
+    fn fraenir(&self, main: usize) -> Vec<SubPhase> {
+        let new = |start: i64, end: i64| SubPhase {
+            start,
+            end,
+            targets: Vec::new(),
+        };
+        let fraenir = &self.targets[main];
+        let icebrood = self
+            .targets
+            .iter()
+            .position(|t| t.species == species::ICEBROOD_CONSTRUCT_FRAENIR);
+        let Some(&split) = self
+            .buff_times_on(fraenir, skill::DETERMINED762, true)
+            .first()
+        else {
+            return Vec::new();
+        };
+        // the first phase stands for the whole fight, which is not part of the result
+        let mut phases = vec![new(0, self.duration), new(0, split)];
+        if let Some(ice) = icebrood.map(|i| &self.targets[i]) {
+            let enter = self
+                .of_target(ice, &[sc::ENTER_COMBAT])
+                .map(|e| e.time - self.offset)
+                .last();
+            if let Some(enter) = enter {
+                let mut ice_end = self.duration;
+                let applied = self.buff_times_on(ice, skill::INVULNERABILITY757, true);
+                let removed = self.buff_times_on(ice, skill::INVULNERABILITY757, false);
+                if let (Some(&apply), Some(&remove)) = (applied.first(), removed.first()) {
+                    phases.push(new(enter + 1, apply));
+                    let back = self
+                        .buff_times_on(fraenir, skill::DETERMINED762, false)
+                        .first()
+                        .copied();
+                    if let Some(back) = back {
+                        let death = self
+                            .of_target(ice, &[sc::CHANGE_DEAD])
+                            .map(|e| e.time - self.offset)
+                            .last();
+                        ice_end = death.unwrap_or(back - 1);
+                        phases.push(new(back, self.duration));
+                    }
+                    phases.push(new(remove, ice_end));
+                }
+                phases.push(new(enter, ice_end));
+            }
+        }
+        phases.sort_by_key(|p| p.start);
+        for (i, phase) in phases.iter_mut().enumerate().skip(1) {
+            if i == 1 || i == 5 {
+                self.add_target(phase, main);
+            } else if let Some(ice) = icebrood {
+                self.add_target(phase, ice);
+            }
+        }
+        phases.remove(0);
+        phases
+    }
+
     /// Eparch (challenge mode): phases alternate with the splits of the incarnations.
     fn eparch(&self, main: usize) -> Vec<SubPhase> {
         let split = [
@@ -1190,6 +1271,7 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::FRAENIR_OF_JORMAG => fight.fraenir(main),
         species::DHUUM => fight.dhuum(main),
         species::QADIM => fight.qadim(main, &extras.pyre_starts),
         species::EPARCH_LONELY_TOWER => fight.eparch(main),
