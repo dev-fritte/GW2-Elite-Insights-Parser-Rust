@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Reflection;
 using System.Text;
 using GW2EIEvtcParser;
@@ -69,7 +69,8 @@ internal static class TargetDump
                 foreach (System.Collections.DictionaryEntry e in sortIds)
                 {
                     sb.Append(id).Append('\t').Append(logic.GetType().Name).Append('\t').Append("sort").Append('\t').Append(Convert.ToInt32(e.Value, CultureInfo.InvariantCulture)).Append('\t').Append(Convert.ToInt32(e.Key, CultureInfo.InvariantCulture)).Append('\n');
-                }            }
+                }
+            }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"{id}: {(ex.InnerException ?? ex).Message}");
