@@ -48,13 +48,19 @@ Lambdas lassen sich nicht per Reflexion lesen. `node tools/gen/Extract-Checkers.
 | `dur>=n`, `dur>n`, `dur<n`, `dur<=n` (32) | Zauberende, Zauberbeginn von Gegnern | tatsächliche Dauer des Zaubers |
 | `interrupted`, `notinterrupted` (3) | Zauberende von Gegnern | Endedatensatz mit Aktivierung 4 (Abbruch) |
 
+### Erfolgsbedingungen
+
+Die 58 `AchievementEligibilityMechanic` (je Erfolg ein Paar `.L` = verloren und `.K` = behalten) beruhen auf `ComputeAchievementEligibilityEvents` der Logik. Portiert ist die Vorlage, der die meisten folgen (`InsertAchievementEligibityEventAndRemovePhase`, `AddSuccessBasedAchievementEligibityEvents`): je Spieler, der im Kampf bekannt ist, der erste Verlust (Treffer einer Fertigkeit, Anwendung eines Buffs) im Kampf, sonst am Kampfende "verloren", wenn der Kampf scheiterte, sonst "behalten". Die Regeln stehen in `RULES` (`mechanics.rs`): Seelenloser Schrecken, Löwenhof, Kosmisches Observatorium (Herausforderungsmodus), Geisterrennen, Flüsternder Schatten, Kaineng (Test der Reflexe und Größter Widerstand, beide Herausforderungsmodus; Letzterer zählt umgekehrt, nur im Erfolg), Greer (Herausforderungsmodus), Drachenleere und Xunlai-Schrottplatz (Klarheit; Unverschlungen im Herausforderungsmodus). Die Kampfart kommt aus `encounter::challenge_mode` (`GetLogMode` von Kaineng, Observatorium, Febe, Greer, Decima und Xunlai; die Story-Karte von Xunlai fehlt). Der Erfolg des Kampfes kommt aus `encounter::log_end_detail`. Es wird ein Kampf je Log angenommen (Instanz-Logs mit mehreren Kämpfen sind nicht ausgewertet).
+
+Nicht portiert, weil sie eigene Berechnungen haben (Tod, Verbindungsabbruch, Buffs, mehrere Kämpfe): Febe (Unbegrenzter Optimismus), Decima (Dieser Käfer kann tanzen), Qadim (Abwechselnd), Sabir, Ura, Wächterhain und Nexus der Ewigkeit.
+
 Die Abklingzeit (ICD) gilt nur im HTML, nicht im JSON, und wird deshalb nicht angewendet. Die Spielerliste ist wie in C# auf aktive Spieler beschränkt.
 
-Noch ohne Auswertung (ohne Zusatz oder mit einer bekannten Prüfung): `PlayerSrcHit` (11), `PlayerCastStart` (10), `SpawnMechanic` (18), `SubMechanic` (27), `EnemyDstBuffRemove` (6), `EnemyStatus` (10) und kleinere Typen. Mit anderem Zusatz (Lambda anderer Form, Untermechanik usw.) sind noch rund 400 Einträge aller Typen, darunter 58 Erfolgsbedingungen (`AchievementEligibilityMechanic`), deren Ereignisse die Logik je Encounter berechnet (`ComputeAchievementEligibilityEvents`); sie brauchen je Mechanik Code.
+Noch ohne Auswertung (ohne Zusatz oder mit einer bekannten Prüfung): `PlayerSrcHit` (11), `PlayerCastStart` (10), `SpawnMechanic` (18), `SubMechanic` (27), `EnemyDstBuffRemove` (6), `EnemyStatus` (10) und kleinere Typen. Mit anderem Zusatz (Lambda anderer Form, Untermechanik usw.) sind noch rund 400 Einträge aller Typen, darunter die Erfolgsbedingungen ohne Vorlage (siehe oben); sie brauchen je Mechanik Code.
 
 ## Messung (103 Korpus-Logs)
 
-Encounter-Mechaniken auf Spielern aus Daten: 1.359 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **12 Abweichungen**, alle aus den bekannten Zeitursachen (Deimos Kampfende 9, Seelenverzehrer Kampfbeginn 3).
+Encounter-Mechaniken auf Spielern aus Daten: 1.407 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **15 Abweichungen**, alle aus den bekannten Zeitursachen (Deimos Kampfende 9, Seelenverzehrer Kampfbeginn 3, Drachenleere Kampfende 3).
 
 Mechaniken auf Gegnern: 203 Vergleiche der Zeiten, **1 Abweichung** (Deimos Kampfende). In 25 Fällen stimmen die Zeiten, aber nicht die Namen der Gegner: C# benennt Gegner in einzelnen Logiken um ("Empowered …", "(Permanent)", "Legendary …", "Elite …", "Godspoil Greer", "Ura, the Steamshrieker", die Klone des Elementar-Ai); diese Umbenennungen sind nicht portiert, und der Vergleich zählt sie getrennt (`mechanics (enemy names)`). Gleichnamige Ziele werden wie `NumericallyRenameSpecies` mit einer Zahl versehen.
 
