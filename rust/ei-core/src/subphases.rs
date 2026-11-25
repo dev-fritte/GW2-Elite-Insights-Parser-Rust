@@ -835,6 +835,71 @@ impl Fight<'_> {
         phases
     }
 
+    /// The time frames in which a target does not have a buff, from the start of the fight to its
+    /// end.
+    fn buff_free_segments(&self, target: &Target, buff: i64) -> Vec<(i64, i64)> {
+        let mut changes: Vec<(i64, bool)> = Vec::new();
+        for e in self
+            .kept
+            .events
+            .iter()
+            .filter(|e| i64::from(e.skill_id) == buff)
+        {
+            let on = |a: u64| a != 0 && target.addresses.contains(&self.redirect(a));
+            match e.state_change {
+                sc::BUFF_APPLY | sc::BUFF_INITIAL if on(e.dst_agent) => {
+                    changes.push((e.time - self.offset, true));
+                }
+                sc::BUFF_REMOVE_ALL if on(e.src_agent) => {
+                    changes.push((e.time - self.offset, false));
+                }
+                _ => {}
+            }
+        }
+        let mut segments = Vec::new();
+        let mut from = 0;
+        let mut present = false;
+        for (time, gained) in changes {
+            if gained == present {
+                continue;
+            }
+            if !present {
+                segments.push((from, time));
+            }
+            from = time;
+            present = gained;
+        }
+        if !present {
+            segments.push((from, self.duration));
+        }
+        segments
+    }
+
+    /// Statue of Darkness: from the loss of the first invulnerability each eye has a phase
+    /// whenever it is not determined.
+    fn statue_of_darkness(&self) -> Vec<SubPhase> {
+        let mut phases = Vec::new();
+        for id in [species::EYE_OF_FATE, species::EYE_OF_JUDGEMENT] {
+            let Some(index) = self.targets.iter().position(|t| t.species == id) else {
+                continue;
+            };
+            let eye = &self.targets[index];
+            let Some(&loss) = self.buff_times_on(eye, skill::DETERMINED762, false).first() else {
+                continue;
+            };
+            for (start, end) in self.buff_free_segments(eye, skill::DETERMINED895) {
+                let mut phase = SubPhase {
+                    start: loss.max(start),
+                    end: end.min(self.duration),
+                    targets: Vec::new(),
+                };
+                self.add_target(&mut phase, index);
+                phases.push(phase);
+            }
+        }
+        phases
+    }
+
     /// Eparch (challenge mode): phases alternate with the splits of the incarnations.
     fn eparch(&self, main: usize) -> Vec<SubPhase> {
         let split = [
@@ -1271,6 +1336,7 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::EYE_OF_FATE => fight.statue_of_darkness(),
         species::FRAENIR_OF_JORMAG => fight.fraenir(main),
         species::DHUUM => fight.dhuum(main),
         species::QADIM => fight.qadim(main, &extras.pyre_starts),
