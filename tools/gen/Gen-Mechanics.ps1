@@ -1,20 +1,54 @@
 <#
  Generates rust/ei-data/src/generated/mechanics.rs from docs/phase7/mechanics.tsv (written by
- `GW2EIParserReference --dump-mechanics`): the encounter mechanics of the C# logics that need no
- lambda, sub mechanic, time clamper or enable condition, so that data alone describes them.
- Usage: Gen-Mechanics.ps1 [-Tsv <mechanics.tsv>] [-Out <mechanics.rs>]
+ `GW2EIParserReference --dump-mechanics`) and docs/phase7/mechanic-filters.tsv (written by
+ `node tools/gen/Extract-Checkers.js`): the encounter mechanics of the C# logics that need no
+ sub mechanic, time clamper or enable condition and whose lambda, if any, is a known filter, so
+ that data alone describes them.
+ Usage: Gen-Mechanics.ps1 [-Tsv <mechanics.tsv>] [-Filters <mechanic-filters.tsv>] [-Out <mechanics.rs>]
 #>
-param([string]$Tsv = '', [string]$Out = '')
+param([string]$Tsv = '', [string]$Filters = '', [string]$Out = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
 if (-not $Tsv) { $Tsv = Join-Path $root 'docs\phase7\mechanics.tsv' }
+if (-not $Filters) { $Filters = Join-Path $root 'docs\phase7\mechanic-filters.tsv' }
 if (-not $Out) { $Out = Join-Path $root 'rust\ei-data\src\generated\mechanics.rs' }
 $kinds = @{
     'PlayerDstHealthDamageHitMechanic' = 'PlayerDstHit'
     'PlayerDstBuffApplyMechanic' = 'PlayerDstBuffApply'
+    'PlayerDstHealthDamageMechanic' = 'PlayerDstDamage'
     'EnemyCastStartMechanic' = 'EnemyCastStart'
     'EnemyCastEndMechanic' = 'EnemyCastEnd'
     'EnemyDstBuffApplyMechanic' = 'EnemyDstBuffApply'
+}
+# the filters each kind can evaluate ('dur' stands for the duration comparisons)
+$allowed = @{
+    'PlayerDstHit' = @('', 'nostab', 'damage')
+    'PlayerDstBuffApply' = @('')
+    'PlayerDstDamage' = @('killed', 'downed', 'downedorkilled')
+    'EnemyCastStart' = @('', 'dur', 'interrupted', 'notinterrupted')
+    'EnemyCastEnd' = @('', 'dur', 'interrupted', 'notinterrupted')
+    'EnemyDstBuffApply' = @('')
+}
+$filterOf = @{}
+foreach ($f in (Import-Csv -Delimiter "`t" -LiteralPath $Filters -Encoding UTF8)) {
+    $filterOf["$($f.Logic)|$($f.Type)|$($f.Short)"] = $f.Filter
+}
+function Get-FilterExpr([string]$code) {
+    switch -Regex ($code) {
+        '^$' { return 'Filter::None' }
+        '^nostab$' { return 'Filter::NoStability' }
+        '^damage$' { return 'Filter::Damage' }
+        '^killed$' { return 'Filter::Killed' }
+        '^downed$' { return 'Filter::Downed' }
+        '^downedorkilled$' { return 'Filter::DownedOrKilled' }
+        '^interrupted$' { return 'Filter::Interrupted' }
+        '^notinterrupted$' { return 'Filter::NotInterrupted' }
+        '^dur>=(\d+)$' { return "Filter::DurationAtLeast($($Matches[1]))" }
+        '^dur>(\d+)$' { return "Filter::DurationAbove($($Matches[1]))" }
+        '^dur<=(\d+)$' { return "Filter::DurationAtMost($($Matches[1]))" }
+        '^dur<(\d+)$' { return "Filter::DurationBelow($($Matches[1]))" }
+    }
+    throw "unknown filter $code"
 }
 $rows = Import-Csv -Delimiter "`t" -LiteralPath $Tsv -Encoding UTF8
 $sb = New-Object System.Text.StringBuilder
@@ -29,12 +63,43 @@ L '    /// A hit (`HasHit`) of one of the skills on a player (`PlayerDstHealthDa
 L '    PlayerDstHit,'
 L '    /// One of the buffs applied to a player (`PlayerDstBuffApplyMechanic`).'
 L '    PlayerDstBuffApply,'
+L '    /// Any damage event with one of the skills on a player (`PlayerDstHealthDamageMechanic`).'
+L '    PlayerDstDamage,'
 L '    /// The start of an animated cast of one of the skills by an enemy (`EnemyCastStartMechanic`).'
 L '    EnemyCastStart,'
 L '    /// The end of an animated cast of one of the skills by an enemy (`EnemyCastEndMechanic`).'
 L '    EnemyCastEnd,'
 L '    /// One of the buffs applied to an enemy (`EnemyDstBuffApplyMechanic`).'
 L '    EnemyDstBuffApply,'
+L '}'
+L ''
+L '/// The check a mechanic adds to its kind (the lambda of `UsingChecker`).'
+L '#[derive(Debug, Clone, Copy, PartialEq, Eq)]'
+L 'pub enum Filter {'
+L '    /// None.'
+L '    None,'
+L '    /// The player has no stability 10 ms before (`UsingBuffChecker(Stability, false)`).'
+L '    NoStability,'
+L '    /// The hit does damage (`HealthDamage > 0`).'
+L '    Damage,'
+L '    /// The event kills (`HasKilled`).'
+L '    Killed,'
+L '    /// The event downs (`HasDowned`).'
+L '    Downed,'
+L '    /// The event downs or kills.'
+L '    DownedOrKilled,'
+L '    /// The cast lasted at least so long (`ActualDuration >= n`).'
+L '    DurationAtLeast(i64),'
+L '    /// The cast lasted longer (`ActualDuration > n`).'
+L '    DurationAbove(i64),'
+L '    /// The cast lasted less (`ActualDuration < n`).'
+L '    DurationBelow(i64),'
+L '    /// The cast lasted at most so long (`ActualDuration <= n`).'
+L '    DurationAtMost(i64),'
+L '    /// The cast was interrupted.'
+L '    Interrupted,'
+L '    /// The cast was not interrupted.'
+L '    NotInterrupted,'
 L '}'
 L ''
 L '/// One mechanic of an encounter logic.'
@@ -44,6 +109,8 @@ L '    /// Trigger id of the log the logic is chosen by.'
 L '    pub trigger_id: i32,'
 L '    /// What it looks for.'
 L '    pub kind: Kind,'
+L '    /// The check the mechanic adds.'
+L '    pub filter: Filter,'
 L '    /// Skill or buff ids.'
 L '    pub ids: &''static [i64],'
 L '    /// Short name, as in the JSON.'
@@ -59,9 +126,18 @@ L 'pub const MECHANICS: &[Mechanic] = &['
 $n = 0
 foreach ($r in ($rows | Sort-Object { [int]$_.Trigger })) {
     if (-not $kinds.ContainsKey($r.Type)) { continue }
-    if ($r.Checkers -ne '0' -or $r.Subs -ne '0' -or $r.Clamper -ne '0' -or $r.Enables -ne '0' -or $r.Minions -ne '0' -or $r.Ignored -ne '0') { continue }
-    $name = $r.Short.Replace('\', '\').Replace('"', '\"')
-    L ("    Mechanic {{ trigger_id: {0}, kind: Kind::{1}, ids: &[{2}], name: ""{3}"", builds: ({4}, {5}), evtc_builds: ({6}, {7}) }}," -f $r.Trigger, $kinds[$r.Type], $r.Ids, $name, $r.MinBuild, $r.MaxBuild, $r.MinEvtc, $r.MaxEvtc)
+    if ($r.Subs -ne '0' -or $r.Clamper -ne '0' -or $r.Enables -ne '0' -or $r.Minions -ne '0' -or $r.Ignored -ne '0') { continue }
+    $kind = $kinds[$r.Type]
+    $code = ''
+    if ($r.Checkers -ne '0') {
+        if ($r.Checkers -ne '1') { continue }
+        $code = $filterOf["$($r.Logic)|$($r.Type)|$($r.Short)"]
+        if (-not $code) { continue }
+    }
+    $base = if ($code -match '^dur') { 'dur' } else { $code }
+    if ($allowed[$kind] -notcontains $base) { continue }
+    $name = $r.Short.Replace('\', '\\').Replace('"', '\"')
+    L ("    Mechanic {{ trigger_id: {0}, kind: Kind::{1}, filter: {8}, ids: &[{2}], name: ""{3}"", builds: ({4}, {5}), evtc_builds: ({6}, {7}) }}," -f $r.Trigger, $kind, $r.Ids, $name, $r.MinBuild, $r.MaxBuild, $r.MinEvtc, $r.MaxEvtc, (Get-FilterExpr $code))
     $n++
 }
 L '];'

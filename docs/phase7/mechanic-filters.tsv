@@ -1,0 +1,81 @@
+Logic	Type	Short	Filter
+Adina	PlayerDstHealthDamageHitMechanic	Perilous Pulse	nostab
+Adina	PlayerDstHealthDamageMechanic	S.Thrower	killed
+AetherbladeHideout	PlayerDstHealthDamageMechanic	Green.Dwn	downed
+AetherbladeHideout	PlayerDstHealthDamageMechanic	Spread.Dwn	downed
+AiKeeperOfThePeak	PlayerDstHealthDamageMechanic	Mtr.H	downedorkilled
+Arkk	EnemyCastEndMechanic	Pull CC Fail	dur>3200
+Arkk	EnemyCastEndMechanic	Pull CCed	dur<3200
+Boneskinner	EnemyCastEndMechanic	D.Darkness	notinterrupted
+Boneskinner	EnemyCastEndMechanic	D.Torch	notinterrupted
+Boneskinner	EnemyCastEndMechanic	D.Wind	notinterrupted
+ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Ground	damage
+ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Tremor	damage
+ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Wall	damage
+Deimos	EnemyCastEndMechanic	TP CC Fail	dur>=2200
+Deimos	EnemyCastEndMechanic	TP CCed	dur<2200
+Deimos	EnemyCastEndMechanic	Thief CC Fail	dur>=4400
+Deimos	EnemyCastEndMechanic	Thief CCed	dur<4400
+Deimos	PlayerDstHealthDamageHitMechanic	Mind Crush	damage
+Dhuum	PlayerCastEndMechanic	Eth.Seal.F	interrupted
+Dhuum	PlayerCastEndMechanic	Eth.Seal.I	notinterrupted
+Dhuum	PlayerCastStartMechanic	Eth.Seal.S	notinterrupted
+Dhuum	PlayerDstHealthDamageHitMechanic	Shackles dmg	damage
+Ensolyss	EnemyCastEndMechanic	CC.E Fail	dur>=15260
+Ensolyss	EnemyCastEndMechanic	CCed	dur<15260
+FraenirOfJormag	PlayerDstHealthDamageHitMechanic	FrozenMissile.CC	nostab
+FraenirOfJormag	PlayerDstHealthDamageHitMechanic	Ice Shock Wave	nostab
+FraenirOfJormag	PlayerDstHealthDamageHitMechanic	IceArmSwing.CC	nostab
+FraenirOfJormag	PlayerDstHealthDamageHitMechanic	Icequake	nostab
+FraenirOfJormag	PlayerDstHealthDamageHitMechanic	SeismicCrush.CC	nostab
+Gorseval	EnemyCastEndMechanic	CC.G End	dur>21985
+Gorseval	EnemyCastEndMechanic	CCed.G	dur<=21985
+Gorseval	PlayerDstHealthDamageHitMechanic	Kick.S	nostab
+Gorseval	PlayerDstHealthDamageHitMechanic	Slam	nostab
+GreerTheBlightbringer	PlayerDstHealthDamageHitMechanic	Rake.H	nostab
+GreerTheBlightbringer	PlayerDstHealthDamageHitMechanic	Sweep.H	nostab
+HarvestTemple	PlayerDstHealthDamageHitMechanic	Kick.H	nostab
+HarvestTemple	PlayerDstHealthDamageHitMechanic	Scream.G.CC	nostab
+HarvestTemple	PlayerDstHealthDamageHitMechanic	Stomp.CC	nostab
+KainengOverlook	PlayerDstHealthDamageMechanic	Bomb.D	downed
+NexusOfEternity	PlayerDstHealthDamageMechanic	WorldpierV.K	killed
+Qadim	EnemyCastEndMechanic	D.CC Fail	dur>=8332
+Qadim	EnemyCastEndMechanic	D.CCed	dur<8332
+Qadim	EnemyCastEndMechanic	H.CC Fail	dur>=12364
+Qadim	EnemyCastEndMechanic	H.CCed	dur<12364
+Qadim	EnemyCastEndMechanic	Q.CCed	dur<6500
+Qadim	EnemyCastEndMechanic	W.CCed	dur<6500
+Qadim	PlayerDstHealthDamageHitMechanic	D.Wave	nostab
+Qadim	PlayerDstHealthDamageHitMechanic	KB	nostab
+Qadim	PlayerDstHealthDamageHitMechanic	Slash	nostab
+QadimThePeerless	PlayerDstHealthDamageHitMechanic	Shck.KB	nostab
+River	PlayerDstHealthDamageHitMechanic	Stun Bomb	nostab
+Sabetha	EnemyCastEndMechanic	CC.K Fail	dur>4400
+Sabetha	EnemyCastEndMechanic	CCed.K	dur<=4400
+Sabetha	PlayerDstHealthDamageHitMechanic	Kick.B	nostab
+Sabetha	PlayerDstHealthDamageMechanic	Flamewall	killed
+Sabetha	PlayerDstHealthDamageMechanic	TimeB Down	downed
+Sabetha	PlayerDstHealthDamageMechanic	TimeB Kill	killed
+Sabir	PlayerDstHealthDamageHitMechanic	Rot.KB	nostab
+Sabir	PlayerDstHealthDamageMechanic	Arena AoE	downedorkilled
+Sabir	PlayerDstHealthDamageMechanic	B.Tornado	downedorkilled
+Sabir	PlayerDstHealthDamageMechanic	Shockwave	downedorkilled
+Samarog	PlayerDstHealthDamageHitMechanic	Schk.Wv	nostab
+Samarog	PlayerDstHealthDamageHitMechanic	Stun	nostab
+Samarog	PlayerDstHealthDamageHitMechanic	Swp	nostab
+Samarog	PlayerDstHealthDamageMechanic	CC.Sam Fail	killed
+Siax	EnemyCastEndMechanic	CC.S Fail	dur>=15232
+Siax	EnemyCastEndMechanic	Phase Fail	dur>=20649
+SooWon	PlayerDstHealthDamageMechanic	Failed Green	killed
+SoullessHorror	EnemyCastEndMechanic	CC.SH Fail	dur>6800
+SoullessHorror	EnemyCastEndMechanic	CCed.SH	dur<=6800
+StatueOfDarkness	PlayerCastStartMechanic	Detonate	notinterrupted
+StatueOfDeath	PlayerCastStartMechanic	Light Orb Thrown	notinterrupted
+TempleOfFebe	PlayerDstHealthDamageHitMechanic	EnrSmash.D	downed
+TwinLargos	PlayerDstHealthDamageHitMechanic	Wave	nostab
+UraTheSteamshrieker	PlayerDstHealthDamageHitMechanic	FullSteam.H	nostab
+UraTheSteamshrieker	PlayerDstHealthDamageHitMechanic	StnSlam.CC	nostab
+ValeGuardian	EnemyCastEndMechanic	CC.VG Fail	dur>8544
+ValeGuardian	EnemyCastEndMechanic	CCed.VG	dur<=8544
+Xera	EnemyCastEndMechanic	CC.X Fail	dur>11940
+Xera	EnemyCastEndMechanic	CCed.X	dur<=11940

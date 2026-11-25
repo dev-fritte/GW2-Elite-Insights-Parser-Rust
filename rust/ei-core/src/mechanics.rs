@@ -532,6 +532,12 @@ fn missed_buffs(kept: &Kept, players: &[Player], offset: i64, duration: i64) -> 
 }
 
 /// `DamageResult` values of direct hits: normal, critical, glancing.
+/// `DamageResult.KillingBlow` and `DamageResult.Downed`.
+const KILLING_BLOW: u8 = 8;
+const DOWNED: u8 = 9;
+/// `ParserHelper.ServerDelayConstant`.
+const SERVER_DELAY: i64 = 10;
+
 const DIRECT_HIT_RESULTS: std::ops::RangeInclusive<u8> = 0..=2;
 /// `DamageResult` values of buff damage that counts as hit: all kinds of buff cycles.
 const BUFF_HIT_RESULTS: std::ops::RangeInclusive<u8> = 14..=18;
@@ -548,6 +554,7 @@ pub fn encounter_mechanics(
     targets: &[crate::encounter::Target],
     offset: i64,
     duration: i64,
+    stability: &dyn Fn(&Player) -> Vec<(i64, i64)>,
 ) -> Vec<MechanicRow> {
     use ei_data::mechanics::{Kind, MECHANICS};
     let trigger_id = i32::from(kept.trigger_id);
@@ -575,6 +582,7 @@ pub fn encounter_mechanics(
             .position(|p| p.address == redirect(address))
             .filter(|&i| active[i])
     };
+    let mut stable: HashMap<usize, Vec<(i64, i64)>> = HashMap::new();
     let enemy_names = enemy_names(kept, table, targets);
     let casts = if defs
         .iter()
@@ -586,9 +594,15 @@ pub fn encounter_mechanics(
     };
     defs.iter()
         .map(|m| match m.kind {
-            Kind::PlayerDstHit | Kind::PlayerDstBuffApply => MechanicRow {
+            Kind::PlayerDstHit | Kind::PlayerDstBuffApply | Kind::PlayerDstDamage => MechanicRow {
                 name: m.name,
-                events: player_events(kept, m, offset, duration, &index_of),
+                events: player_events(kept, m, offset, duration, &index_of, &mut |i, time| {
+                    stable
+                        .entry(i)
+                        .or_insert_with(|| stability(&players[i]))
+                        .iter()
+                        .any(|&(start, end)| start <= time && time < end)
+                }),
                 enemies: Vec::new(),
             },
             Kind::EnemyDstBuffApply => {
@@ -617,7 +631,7 @@ pub fn encounter_mechanics(
             Kind::EnemyCastStart | Kind::EnemyCastEnd => {
                 let enemies = casts
                     .iter()
-                    .filter(|c| m.ids.contains(&c.skill))
+                    .filter(|c| m.ids.contains(&c.skill) && cast_filter(m.filter, c))
                     .map(|c| {
                         let time = if m.kind == Kind::EnemyCastStart {
                             c.start
@@ -645,8 +659,9 @@ fn player_events(
     offset: i64,
     duration: i64,
     index_of: &dyn Fn(u64) -> Option<usize>,
+    has_stability: &mut dyn FnMut(usize, i64) -> bool,
 ) -> Vec<(i64, usize)> {
-    use ei_data::mechanics::Kind;
+    use ei_data::mechanics::{Filter, Kind};
     kept.events
         .iter()
         .filter(|e| e.dst_agent != 0 && m.ids.contains(&i64::from(e.skill_id)))
@@ -659,9 +674,27 @@ fn player_events(
                         BUFF_HIT_RESULTS.contains(&e.result)
                     }
             }
+            Kind::PlayerDstDamage => e.state_change == sc::COMBAT,
             _ => matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL),
         })
-        .filter_map(|e| Some((e.time - offset, index_of(e.dst_agent)?)))
+        .filter(|e| match m.filter {
+            Filter::Damage => {
+                if e.is_buff == 0 {
+                    e.value > 0
+                } else {
+                    e.buff_dmg > 0
+                }
+            }
+            Filter::Killed => e.result == KILLING_BLOW,
+            Filter::Downed => e.result == DOWNED,
+            Filter::DownedOrKilled => e.result == KILLING_BLOW || e.result == DOWNED,
+            _ => true,
+        })
+        .filter_map(|e| Some((e, index_of(e.dst_agent)?)))
+        .filter(|(e, i)| {
+            m.filter != Filter::NoStability || !has_stability(*i, e.time - offset - SERVER_DELAY)
+        })
+        .map(|(e, i)| (e.time - offset, i))
         .filter(|(time, _)| (0..=duration).contains(time))
         .collect()
 }
@@ -712,6 +745,7 @@ struct EnemyCast {
     skill: i64,
     start: i64,
     duration: i64,
+    interrupted: bool,
 }
 
 /// The animated casts of the enemies (`CombatEventFactory.CreateCastEvents`): a start pairs with
@@ -719,12 +753,12 @@ struct EnemyCast {
 /// until the next cast of the caster starts; an end without a start belongs to a cast that began
 /// before the log.
 fn enemy_casts(kept: &Kept, enemies: &HashMap<u64, String>) -> Vec<EnemyCast> {
-    const SERVER_DELAY: i64 = 10;
+    const CANCEL: u8 = 4;
     const ANIM_WITH_SCALED_DURATIONS: i32 = 20_191_107;
     type Open<'a> = HashMap<(u64, u32), &'a evtc_ingest::CombatRecord>;
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
-    // (caster address, skill, start, duration, unknown end)
-    let mut casts: Vec<(u64, u32, i64, i64, bool)> = Vec::new();
+    // (caster address, skill, start, duration, unknown end, interrupted)
+    let mut casts: Vec<(u64, u32, i64, i64, bool, bool)> = Vec::new();
     let expected = |start: &evtc_ingest::CombatRecord| {
         i64::from(if kept.version.build >= ANIM_WITH_SCALED_DURATIONS {
             start.buff_dmg
@@ -744,7 +778,14 @@ fn enemy_casts(kept: &Kept, enemies: &HashMap<u64, String>) -> Vec<EnemyCast> {
         let key = (caster, e.skill_id);
         if e.state_change == sc::ANIMATION_START {
             if let Some(previous) = open.insert(key, e) {
-                casts.push((caster, e.skill_id, previous.time, expected(previous), true));
+                casts.push((
+                    caster,
+                    e.skill_id,
+                    previous.time,
+                    expected(previous),
+                    true,
+                    false,
+                ));
             }
         } else if let Some(start) = open.remove(&key) {
             let mut duration = i64::from(e.value);
@@ -752,16 +793,30 @@ fn enemy_casts(kept: &Kept, enemies: &HashMap<u64, String>) -> Vec<EnemyCast> {
             if (duration - real).abs() > SERVER_DELAY {
                 duration = real;
             }
-            casts.push((caster, e.skill_id, start.time, duration, false));
+            casts.push((
+                caster,
+                e.skill_id,
+                start.time,
+                duration,
+                false,
+                e.is_activation == CANCEL,
+            ));
         } else {
             let duration = i64::from(e.value);
             if e.time - duration < 0 {
-                casts.push((caster, e.skill_id, e.time - duration, duration, false));
+                casts.push((
+                    caster,
+                    e.skill_id,
+                    e.time - duration,
+                    duration,
+                    false,
+                    e.is_activation == CANCEL,
+                ));
             }
         }
     }
     for ((caster, skill), start) in open {
-        casts.push((caster, skill, start.time, expected(start), true));
+        casts.push((caster, skill, start.time, expected(start), true, false));
     }
     casts.sort_by_key(|c| (c.0, c.2));
     // a cast of unknown end stops when the next one of the caster starts
@@ -775,11 +830,28 @@ fn enemy_casts(kept: &Kept, enemies: &HashMap<u64, String>) -> Vec<EnemyCast> {
     }
     casts
         .into_iter()
-        .map(|(caster, skill, start, duration, _)| EnemyCast {
-            caster: enemies[&caster].clone(),
-            skill: i64::from(skill),
-            start,
-            duration,
-        })
+        .map(
+            |(caster, skill, start, duration, _, interrupted)| EnemyCast {
+                caster: enemies[&caster].clone(),
+                skill: i64::from(skill),
+                start,
+                duration,
+                interrupted,
+            },
+        )
         .collect()
+}
+
+/// Whether a cast passes the check of a mechanic.
+fn cast_filter(filter: ei_data::mechanics::Filter, cast: &EnemyCast) -> bool {
+    use ei_data::mechanics::Filter;
+    match filter {
+        Filter::DurationAtLeast(n) => cast.duration >= n,
+        Filter::DurationAbove(n) => cast.duration > n,
+        Filter::DurationBelow(n) => cast.duration < n,
+        Filter::DurationAtMost(n) => cast.duration <= n,
+        Filter::Interrupted => cast.interrupted,
+        Filter::NotInterrupted => !cast.interrupted,
+        _ => true,
+    }
 }

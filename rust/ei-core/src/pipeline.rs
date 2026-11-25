@@ -10,6 +10,9 @@ use crate::keep::{KeepError, KeepSettings, Kept, keep_events};
 use crate::meta::{Metadata, extract};
 use crate::players::{Player, find_players};
 
+/// Buff id of stability.
+const STABILITY: i64 = 1122;
+
 /// What the core knows about a log.
 #[derive(Debug, Clone)]
 pub struct Analysis {
@@ -345,6 +348,18 @@ pub fn analyze_damage(
         &targets,
         timing.offset,
         timing.duration,
+        &|player| {
+            crate::buff_events::simulate_agent(&ctx, player.address, elementalist_kind(player))
+                .map(|all| {
+                    all.iter()
+                        .filter(|b| b.buff.id == STABILITY)
+                        .flat_map(|b| b.items.iter())
+                        .filter(|i| i.active_stacks > 0)
+                        .map(|i| (i.start, i.end))
+                        .collect()
+                })
+                .unwrap_or_default()
+        },
     ));
     let mechanic_players = players.clone();
     let mut out = Vec::with_capacity(players.len());
