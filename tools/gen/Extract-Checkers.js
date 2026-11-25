@@ -48,6 +48,7 @@ function classify(chain) {
   }
   if ((m = /^\(\w+,\s*log\)\s*=>\s*(!?)\w+\.IsInterrupted$/.exec(a))) return m[1] ? 'notinterrupted' : 'interrupted';
   if (/^\(\w+,\s*log\)\s*=>\s*\w+\.HealthDamage > 0$/.test(a)) return 'damage';
+  if ((m = /^\(\w+,\s*log\)\s*=>\s*(!?)\w+\.Lost$/.exec(a))) return m[1] ? 'kept' : 'lost';
   if (/^\(\w+,\s*log\)\s*=>\s*\w+\.HasKilled$/.test(a)) return 'killed';
   if (/^\(\w+,\s*log\)\s*=>\s*\w+\.HasDowned$/.test(a)) return 'downed';
   if (/^\(\w+,\s*log\)\s*=>\s*\w+\.HasDowned \|\| \w+\.HasKilled$/.test(a)) return 'downedorkilled';

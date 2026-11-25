@@ -542,6 +542,19 @@ const DIRECT_HIT_RESULTS: std::ops::RangeInclusive<u8> = 0..=2;
 /// `DamageResult` values of buff damage that counts as hit: all kinds of buff cycles.
 const BUFF_HIT_RESULTS: std::ops::RangeInclusive<u8> = 14..=18;
 
+/// The fight the mechanics of the encounter logic are evaluated in.
+#[derive(Debug, Clone, Copy)]
+pub struct Fight {
+    /// Time of the records that counts as 0.
+    pub offset: i64,
+    /// Length of the fight.
+    pub duration: i64,
+    /// Whether the encounter succeeded.
+    pub success: bool,
+    /// Whether the log is a challenge mode (see `encounter::challenge_mode`).
+    pub challenge: bool,
+}
+
 /// The mechanics of the encounter logic of the log that data alone describes (hits on players,
 /// buffs applied to players); the ones with a lambda, a sub mechanic or similar are not ported.
 ///
@@ -552,15 +565,18 @@ pub fn encounter_mechanics(
     players: &[Player],
     table: evtc_ingest::AgentTable<'_>,
     targets: &[crate::encounter::Target],
-    offset: i64,
-    duration: i64,
+    fight: Fight,
     stability: &dyn Fn(&Player) -> Vec<(i64, i64)>,
 ) -> Vec<MechanicRow> {
     use ei_data::mechanics::{Kind, MECHANICS};
+    let Fight {
+        offset, duration, ..
+    } = fight;
     let trigger_id = i32::from(kept.trigger_id);
     let defs: Vec<_> = MECHANICS
         .iter()
         .filter(|m| m.trigger_id == trigger_id)
+        .filter(|m| m.kind != Kind::Achievement || achievement_rule(trigger_id, m.ids[0]).is_some())
         .filter(|m| {
             let (min, max) = m.builds;
             let (min_evtc, max_evtc) = m.evtc_builds;
@@ -583,6 +599,7 @@ pub fn encounter_mechanics(
             .filter(|&i| active[i])
     };
     let mut stable: HashMap<usize, Vec<(i64, i64)>> = HashMap::new();
+    let achievements = achievement_events(kept, players, &spans, &active, fight, trigger_id, &defs);
     let enemy_names = enemy_names(kept, table, targets);
     let casts = if defs
         .iter()
@@ -605,51 +622,284 @@ pub fn encounter_mechanics(
                 }),
                 enemies: Vec::new(),
             },
-            Kind::EnemyDstBuffApply => {
-                let enemies = kept
-                    .events
-                    .iter()
-                    .filter(|e| {
-                        e.dst_agent != 0
-                            && m.ids.contains(&i64::from(e.skill_id))
-                            && matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+            Kind::Achievement => MechanicRow {
+                name: m.name,
+                events: achievements
+                    .get(&(m.trigger_id, m.ids[0]))
+                    .map(|all| {
+                        let lost = m.filter == ei_data::mechanics::Filter::Lost;
+                        all.iter()
+                            .filter(|e| e.2 == lost)
+                            .map(|e| (e.0, e.1))
+                            .collect()
                     })
-                    .filter_map(|e| {
-                        Some((
-                            e.time - offset,
-                            enemy_names.get(&redirect(e.dst_agent))?.clone(),
-                        ))
-                    })
-                    .filter(|(time, _)| (0..=duration).contains(time))
-                    .collect();
-                MechanicRow {
-                    name: m.name,
-                    events: Vec::new(),
-                    enemies,
-                }
-            }
-            Kind::EnemyCastStart | Kind::EnemyCastEnd => {
-                let enemies = casts
-                    .iter()
-                    .filter(|c| m.ids.contains(&c.skill) && cast_filter(m.filter, c))
-                    .map(|c| {
-                        let time = if m.kind == Kind::EnemyCastStart {
-                            c.start
-                        } else {
-                            c.start + c.duration
-                        };
-                        (time - offset, c.caster.clone())
-                    })
-                    .filter(|(time, _)| (0..=duration).contains(time))
-                    .collect();
-                MechanicRow {
-                    name: m.name,
-                    events: Vec::new(),
-                    enemies,
-                }
-            }
+                    .unwrap_or_default(),
+                enemies: Vec::new(),
+            },
+            Kind::EnemyDstBuffApply | Kind::EnemyCastStart | Kind::EnemyCastEnd => MechanicRow {
+                name: m.name,
+                events: Vec::new(),
+                enemies: enemy_events(kept, m, fight, &enemy_names, &casts),
+            },
         })
         .collect()
+}
+
+/// The events of a mechanic on enemies: time in the fight and name of the enemy.
+fn enemy_events(
+    kept: &Kept,
+    m: &ei_data::mechanics::Mechanic,
+    fight: Fight,
+    names: &HashMap<u64, String>,
+    casts: &[EnemyCast],
+) -> Vec<(i64, String)> {
+    use ei_data::mechanics::Kind;
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    let mut events: Vec<(i64, String)> = if m.kind == Kind::EnemyDstBuffApply {
+        kept.events
+            .iter()
+            .filter(|e| {
+                e.dst_agent != 0
+                    && m.ids.contains(&i64::from(e.skill_id))
+                    && matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+            })
+            .filter_map(|e| {
+                Some((
+                    e.time - fight.offset,
+                    names.get(&redirect(e.dst_agent))?.clone(),
+                ))
+            })
+            .collect()
+    } else {
+        casts
+            .iter()
+            .filter(|c| m.ids.contains(&c.skill) && cast_filter(m.filter, c))
+            .map(|c| {
+                let time = if m.kind == Kind::EnemyCastStart {
+                    c.start
+                } else {
+                    c.start + c.duration
+                };
+                (time - fight.offset, c.caster.clone())
+            })
+            .collect()
+    };
+    events.retain(|(time, _)| (0..=fight.duration).contains(time));
+    events
+}
+
+/// Achievement events (time, player index, lost) per (trigger id, achievement id).
+type Achievements = HashMap<(i32, i64), Vec<(i64, usize, bool)>>;
+
+/// How an achievement is lost.
+enum Loss {
+    /// A hit by one of the skills.
+    Hit(&'static [i64]),
+    /// A damage event of one of the skills, whatever its result.
+    AnyHit(&'static [i64]),
+    /// An application of the buff.
+    Buff(i64),
+}
+
+/// The loss of an achievement that follows the usual template (`InsertAchievementEligibityEventAndRemovePhase`
+/// and `AddSuccessBasedAchievementEligibityEvents`): the first loss in the encounter ends the
+/// eligibility, otherwise it is kept if the encounter succeeded.
+struct Rule {
+    /// Name of the C# logic class.
+    logic: &'static str,
+    /// Achievement id.
+    id: i64,
+    /// Only challenge mode encounters count.
+    challenge: bool,
+    /// What loses it.
+    loss: Loss,
+    /// Inverted bookkeeping of the C# code: a loss only counts in a successful encounter and is
+    /// reported as not lost, the remaining ones are reported as lost.
+    inverted: bool,
+}
+
+const RULES: &[Rule] = &[
+    Rule {
+        logic: "SoullessHorror",
+        id: 11,
+        challenge: false,
+        inverted: false,
+        loss: Loss::Hit(&[skill::INNER_VORTEX_SLASH, skill::OUTER_VORTEX_SLASH]),
+    },
+    Rule {
+        logic: "OldLionsCourt",
+        id: 5,
+        challenge: false,
+        inverted: false,
+        loss: Loss::Hit(&[
+            skill::BOILING_AETHER_RED_BLUE_NM,
+            skill::BOILING_AETHER_RED_BLUE_CM,
+            skill::BOILING_AETHER_GREEN_NM,
+            skill::BOILING_AETHER_GREEN_CM,
+        ]),
+    },
+    Rule {
+        logic: "CosmicObservatory",
+        id: 8,
+        challenge: true,
+        inverted: false,
+        loss: Loss::Hit(&[
+            skill::SPINNING_NEBULA_CENTRAL,
+            skill::SPINNING_NEBULA_WITH_TELEPORT,
+        ]),
+    },
+    Rule {
+        logic: "SpiritRace",
+        id: 10,
+        challenge: false,
+        inverted: false,
+        loss: Loss::Buff(skill::CRIPPLED),
+    },
+    Rule {
+        logic: "WhisperingShadow",
+        id: 1,
+        challenge: false,
+        inverted: false,
+        loss: Loss::Hit(&[skill::LOFTED_CRYOFLASH, skill::TERRESTRIAL_CRYOFLASH]),
+    },
+    Rule {
+        logic: "KainengOverlook",
+        id: 3,
+        challenge: true,
+        inverted: false,
+        loss: Loss::Hit(&[
+            skill::DRAGON_SLASH_WAVE_NM,
+            skill::DRAGON_SLASH_WAVE_CM,
+            skill::DRAGON_SLASH_RUSH_NM1,
+            skill::DRAGON_SLASH_RUSH_NM2,
+            skill::DRAGON_SLASH_RUSH1_CM,
+            skill::DRAGON_SLASH_RUSH2_CM,
+        ]),
+    },
+    Rule {
+        logic: "GreerTheBlightbringer",
+        id: 14,
+        challenge: true,
+        inverted: false,
+        loss: Loss::Buff(skill::PLAGUE_ROT),
+    },
+    Rule {
+        logic: "KainengOverlook",
+        id: 4,
+        challenge: true,
+        inverted: true,
+        loss: Loss::AnyHit(&[
+            skill::ENHANCED_DESTRUCTIVE_AURA_SKILL1,
+            skill::ENHANCED_DESTRUCTIVE_AURA_SKILL2,
+        ]),
+    },
+    Rule {
+        logic: "HarvestTemple",
+        id: 2,
+        challenge: false,
+        inverted: false,
+        loss: Loss::Hit(&[
+            skill::MORDREMOTH_SHOCKWAVE,
+            skill::TSUNAMI_SLAM_CLAW_ORB,
+            skill::TSUNAMI_SLAM_TAIL_ORB,
+        ]),
+    },
+    Rule {
+        logic: "XunlaiJadeJunkyard",
+        id: 6,
+        challenge: false,
+        inverted: false,
+        loss: Loss::Hit(&[
+            skill::WALL_OF_FEAR,
+            skill::WAVE_OF_TORMENT_NM,
+            skill::WAVE_OF_TORMENT_CM,
+            skill::TERRIFYING_APPARITION,
+        ]),
+    },
+    Rule {
+        logic: "XunlaiJadeJunkyard",
+        id: 7,
+        challenge: true,
+        inverted: false,
+        loss: Loss::Buff(skill::DEVOURING_VOID),
+    },
+];
+
+fn achievement_rule(trigger_id: i32, id: i64) -> Option<&'static Rule> {
+    let logic = ei_data::targets::logic(trigger_id)?;
+    RULES.iter().find(|r| r.logic == logic.name && r.id == id)
+}
+
+/// The achievement events of the players (time, player index, lost) per (trigger id, achievement
+/// id). The fight is the one encounter of the log: a player takes part if the fight and the
+/// time the player is known intersect.
+fn achievement_events(
+    kept: &Kept,
+    players: &[Player],
+    spans: &HashMap<u64, (i64, i64)>,
+    active: &[bool],
+    fight: Fight,
+    trigger_id: i32,
+    defs: &[&ei_data::mechanics::Mechanic],
+) -> Achievements {
+    let mut out = HashMap::new();
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    for id in defs
+        .iter()
+        .filter(|m| m.kind == ei_data::mechanics::Kind::Achievement)
+        .map(|m| m.ids[0])
+    {
+        let Some(rule) = achievement_rule(trigger_id, id) else {
+            continue;
+        };
+        let mut events = Vec::new();
+        if !rule.challenge || fight.challenge {
+            for (i, player) in players.iter().enumerate().filter(|(i, _)| active[*i]) {
+                let Some(&(first, last)) = spans.get(&player.address) else {
+                    continue;
+                };
+                let (first, last) = (first - fight.offset, last - fight.offset);
+                if last.min(fight.duration) - first.max(0) <= 0 {
+                    continue;
+                }
+                let loss = kept.events.iter().find(|e| {
+                    let time = e.time - fight.offset;
+                    e.dst_agent != 0
+                        && redirect(e.dst_agent) == player.address
+                        && (0..=fight.duration).contains(&time)
+                        && (first..=last).contains(&time)
+                        && match rule.loss {
+                            Loss::Hit(ids) => {
+                                e.state_change == sc::COMBAT
+                                    && ids.contains(&i64::from(e.skill_id))
+                                    && if e.is_buff == 0 {
+                                        DIRECT_HIT_RESULTS.contains(&e.result)
+                                    } else {
+                                        BUFF_HIT_RESULTS.contains(&e.result)
+                                    }
+                            }
+                            Loss::AnyHit(ids) => {
+                                e.state_change == sc::COMBAT && ids.contains(&i64::from(e.skill_id))
+                            }
+                            Loss::Buff(buff) => {
+                                matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+                                    && i64::from(e.skill_id) == buff
+                            }
+                        }
+                });
+                // the C# code of the inverted rule only takes a loss in a successful encounter
+                let loss = loss.filter(|_| !rule.inverted || fight.success);
+                events.push(match (loss, rule.inverted) {
+                    (Some(e), false) => (e.time - fight.offset, i, true),
+                    (Some(e), true) => (e.time - fight.offset, i, false),
+                    (None, false) => (fight.duration, i, !fight.success),
+                    (None, true) => (fight.duration, i, true),
+                });
+            }
+        }
+        out.insert((trigger_id, id), events);
+    }
+    out
 }
 
 /// The hits and buff applications on active players that a data mechanic looks for.

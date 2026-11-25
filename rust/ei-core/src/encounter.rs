@@ -1476,6 +1476,19 @@ pub fn log_end(
     player_addresses: &[u64],
     offset: i64,
 ) -> Result<i64, MissingKeyActors> {
+    log_end_detail(kept, table, player_addresses, offset).map(|(time, _)| time)
+}
+
+/// The end of the fight like [`log_end`] and whether the encounter succeeded.
+///
+/// # Errors
+/// [`MissingKeyActors`] if the main target is not in the log.
+pub fn log_end_detail(
+    kept: &Kept,
+    table: AgentTable<'_>,
+    player_addresses: &[u64],
+    offset: i64,
+) -> Result<(i64, bool), MissingKeyActors> {
     let spans = spans(kept);
     let c = Ctx {
         kept,
@@ -1486,11 +1499,14 @@ pub fn log_end(
     // the spirit race has no target to check, only the old raid reward
     if i32::from(kept.trigger_id) == species::target_id::ETHEREAL_BARRIER_GADGET {
         let end = twisted_castle_end(&c, offset);
-        return Ok(if end.success {
-            (end.time + SERVER_DELAY).min(kept.log_end_time)
-        } else {
-            end.time
-        });
+        return Ok((
+            if end.success {
+                (end.time + SERVER_DELAY).min(kept.log_end_time)
+            } else {
+                end.time
+            },
+            end.success,
+        ));
     }
     let target = c.agent(i32::from(kept.trigger_id))?;
     let end = match i32::from(kept.trigger_id) {
@@ -1515,11 +1531,68 @@ pub fn log_end(
         }
         _ => generic_end(&c, &target, player_addresses),
     };
-    Ok(if end.success {
-        (end.time + SERVER_DELAY).min(kept.log_end_time)
-    } else {
-        end.time
-    })
+    Ok((
+        if end.success {
+            (end.time + SERVER_DELAY).min(kept.log_end_time)
+        } else {
+            end.time
+        },
+        end.success,
+    ))
+}
+
+/// Whether the log is a challenge mode, for the logics whose mode the achievements depend on
+/// (`GetLogMode` of Kaineng Overlook, Cosmic Observatory, Temple of Febe, Greer and Decima).
+#[must_use]
+pub fn challenge_mode(kept: &Kept, table: AgentTable<'_>) -> bool {
+    /// `GW2Builds.DagdaNMHPChangedAndCMRelease`.
+    const DAGDA_CM_RELEASE: u64 = 153_978;
+    let spans = spans(kept);
+    let c = Ctx {
+        kept,
+        table,
+        spans: &spans,
+        offset: 0,
+    };
+    let health = |id: i32| c.agent(id).ok().and_then(|agent| actor_health(&c, &agent));
+    match i32::from(kept.trigger_id) {
+        species::target_id::MINISTER_LI_CM => true,
+        24_485 => c.agent(species::target_id::MINISTER_LI_CM).is_ok(),
+        species::target_id::GREER => c.agent(species::target_id::EREG).is_ok(),
+        species::target_id::DECIMA_CM => true,
+        species::target_id::ANKKA => {
+            health(species::target_id::ANKKA).is_some_and(|hp| hp > 40_000_000)
+        }
+        // Cerus of the Temple of Febe: challenge or legendary challenge mode
+        species::target_id::CERUS => {
+            health(species::target_id::CERUS).is_some_and(|hp| hp > 80_000_000)
+        }
+        species::target_id::DAGDA => {
+            let Ok(dagda) = c.agent(species::target_id::DAGDA) else {
+                return false;
+            };
+            if kept.gw2_build < DAGDA_CM_RELEASE
+                || actor_health(&c, &dagda).is_none_or(|hp| hp <= 50_000_000)
+            {
+                return false;
+            }
+            // the demonic aura was removed but the timer never applied: not a true challenge mode
+            let removed = c.kept.events.iter().any(|e| {
+                e.state_change == sc::BUFF_REMOVE_ALL
+                    && i64::from(e.skill_id) == skill::DAGDA_DEMONIC_AURA
+                    && e.dst_agent != 0
+                    && c.redirect(e.dst_agent) == dagda.address
+            });
+            let timer = c.kept.events.iter().any(|e| {
+                matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+                    && i64::from(e.skill_id) == skill::DAGDA_DEMONIC_AURA_TIMER
+                    && e.dst_agent != 0
+                    && c.redirect(e.dst_agent) == dagda.address
+            });
+            !removed || timer
+        }
+        _ => false,
+    }
 }
 
 /// Files a regrouped group of agents: a single agent keeps its place, a merged one is new.

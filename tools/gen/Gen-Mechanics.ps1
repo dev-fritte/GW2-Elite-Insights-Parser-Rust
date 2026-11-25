@@ -19,6 +19,7 @@ $kinds = @{
     'EnemyCastStartMechanic' = 'EnemyCastStart'
     'EnemyCastEndMechanic' = 'EnemyCastEnd'
     'EnemyDstBuffApplyMechanic' = 'EnemyDstBuffApply'
+    'AchievementEligibilityMechanic' = 'Achievement'
 }
 # the filters each kind can evaluate ('dur' stands for the duration comparisons)
 $allowed = @{
@@ -28,6 +29,7 @@ $allowed = @{
     'EnemyCastStart' = @('', 'dur', 'interrupted', 'notinterrupted')
     'EnemyCastEnd' = @('', 'dur', 'interrupted', 'notinterrupted')
     'EnemyDstBuffApply' = @('')
+    'Achievement' = @('lost', 'kept')
 }
 $filterOf = @{}
 foreach ($f in (Import-Csv -Delimiter "`t" -LiteralPath $Filters -Encoding UTF8)) {
@@ -38,6 +40,8 @@ function Get-FilterExpr([string]$code) {
         '^$' { return 'Filter::None' }
         '^nostab$' { return 'Filter::NoStability' }
         '^damage$' { return 'Filter::Damage' }
+        '^lost$' { return 'Filter::Lost' }
+        '^kept$' { return 'Filter::Kept' }
         '^killed$' { return 'Filter::Killed' }
         '^downed$' { return 'Filter::Downed' }
         '^downedorkilled$' { return 'Filter::DownedOrKilled' }
@@ -71,6 +75,8 @@ L '    /// The end of an animated cast of one of the skills by an enemy (`EnemyC
 L '    EnemyCastEnd,'
 L '    /// One of the buffs applied to an enemy (`EnemyDstBuffApplyMechanic`).'
 L '    EnemyDstBuffApply,'
+L '    /// The loss or keeping of an achievement; the ids are achievement ids (`AchievementEligibilityMechanic`).'
+L '    Achievement,'
 L '}'
 L ''
 L '/// The check a mechanic adds to its kind (the lambda of `UsingChecker`).'
@@ -96,6 +102,10 @@ L '    /// The cast lasted less (`ActualDuration < n`).'
 L '    DurationBelow(i64),'
 L '    /// The cast lasted at most so long (`ActualDuration <= n`).'
 L '    DurationAtMost(i64),'
+L '    /// The achievement was lost (`Lost`).'
+L '    Lost,'
+L '    /// The achievement was kept (`!Lost`).'
+L '    Kept,'
 L '    /// The cast was interrupted.'
 L '    Interrupted,'
 L '    /// The cast was not interrupted.'

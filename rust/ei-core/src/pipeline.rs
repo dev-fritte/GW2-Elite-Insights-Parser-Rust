@@ -346,8 +346,18 @@ pub fn analyze_damage(
         &players,
         evtc.agents(),
         &targets,
-        timing.offset,
-        timing.duration,
+        crate::mechanics::Fight {
+            offset: timing.offset,
+            duration: timing.duration,
+            success: crate::encounter::log_end_detail(
+                &kept,
+                evtc.agents(),
+                &players.iter().map(|p| p.address).collect::<Vec<_>>(),
+                timing.offset,
+            )
+            .is_ok_and(|(_, success)| success),
+            challenge: crate::encounter::challenge_mode(&kept, evtc.agents()),
+        },
         &|player| {
             crate::buff_events::simulate_agent(&ctx, player.address, elementalist_kind(player))
                 .map(|all| {

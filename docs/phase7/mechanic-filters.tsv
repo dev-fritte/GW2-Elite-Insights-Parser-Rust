@@ -12,6 +12,10 @@ Boneskinner	EnemyCastEndMechanic	D.Wind	notinterrupted
 ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Ground	damage
 ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Tremor	damage
 ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Wall	damage
+CosmicObservatory	AchievementEligibilityMechanic	DancStars.Achiv.K	kept
+CosmicObservatory	AchievementEligibilityMechanic	DancStars.Achiv.L	lost
+DecimaTheStormsinger	AchievementEligibilityMechanic	BugDance.Achiv.K	kept
+DecimaTheStormsinger	AchievementEligibilityMechanic	BugDance.Achiv.L	lost
 Deimos	EnemyCastEndMechanic	TP CC Fail	dur>=2200
 Deimos	EnemyCastEndMechanic	TP CCed	dur<2200
 Deimos	EnemyCastEndMechanic	Thief CC Fail	dur>=4400
@@ -32,13 +36,29 @@ Gorseval	EnemyCastEndMechanic	CC.G End	dur>21985
 Gorseval	EnemyCastEndMechanic	CCed.G	dur<=21985
 Gorseval	PlayerDstHealthDamageHitMechanic	Kick.S	nostab
 Gorseval	PlayerDstHealthDamageHitMechanic	Slam	nostab
+GreerTheBlightbringer	AchievementEligibilityMechanic	Unplagued.Achiv.K	kept
+GreerTheBlightbringer	AchievementEligibilityMechanic	Unplagued.Achiv.L	lost
 GreerTheBlightbringer	PlayerDstHealthDamageHitMechanic	Rake.H	nostab
 GreerTheBlightbringer	PlayerDstHealthDamageHitMechanic	Sweep.H	nostab
+GuardiansGlade	AchievementEligibilityMechanic	Achiv.Sand.K	kept
+GuardiansGlade	AchievementEligibilityMechanic	Achiv.Sand.L	lost
+HarvestTemple	AchievementEligibilityMechanic	NopeRopes.Achiv.K	kept
+HarvestTemple	AchievementEligibilityMechanic	NopeRopes.Achiv.L	lost
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Kick.H	nostab
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Scream.G.CC	nostab
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Stomp.CC	nostab
+KainengOverlook	AchievementEligibilityMechanic	MostResi.Achiv.G	kept
+KainengOverlook	AchievementEligibilityMechanic	MostResi.Achiv.N.G	lost
+KainengOverlook	AchievementEligibilityMechanic	TextReflx.Achiv.K	kept
+KainengOverlook	AchievementEligibilityMechanic	TextReflx.Achiv.L	lost
 KainengOverlook	PlayerDstHealthDamageMechanic	Bomb.D	downed
+NexusOfEternity	AchievementEligibilityMechanic	TrueVisionary.Achiv.K	kept
+NexusOfEternity	AchievementEligibilityMechanic	TrueVisionary.Achiv.L	lost
 NexusOfEternity	PlayerDstHealthDamageMechanic	WorldpierV.K	killed
+OldLionsCourt	AchievementEligibilityMechanic	AethAver.Achiv.K	kept
+OldLionsCourt	AchievementEligibilityMechanic	AethAver.Achiv.L	lost
+Qadim	AchievementEligibilityMechanic	Taking Turns.G	kept
+Qadim	AchievementEligibilityMechanic	Taking Turns.N.G	lost
 Qadim	EnemyCastEndMechanic	D.CC Fail	dur>=8332
 Qadim	EnemyCastEndMechanic	D.CCed	dur<8332
 Qadim	EnemyCastEndMechanic	H.CC Fail	dur>=12364
@@ -56,6 +76,8 @@ Sabetha	PlayerDstHealthDamageHitMechanic	Kick.B	nostab
 Sabetha	PlayerDstHealthDamageMechanic	Flamewall	killed
 Sabetha	PlayerDstHealthDamageMechanic	TimeB Down	downed
 Sabetha	PlayerDstHealthDamageMechanic	TimeB Kill	killed
+Sabir	AchievementEligibilityMechanic	Charged Winds K	kept
+Sabir	AchievementEligibilityMechanic	Charged Winds L	lost
 Sabir	PlayerDstHealthDamageHitMechanic	Rot.KB	nostab
 Sabir	PlayerDstHealthDamageMechanic	Arena AoE	downedorkilled
 Sabir	PlayerDstHealthDamageMechanic	B.Tornado	downedorkilled
@@ -67,15 +89,29 @@ Samarog	PlayerDstHealthDamageMechanic	CC.Sam Fail	killed
 Siax	EnemyCastEndMechanic	CC.S Fail	dur>=15232
 Siax	EnemyCastEndMechanic	Phase Fail	dur>=20649
 SooWon	PlayerDstHealthDamageMechanic	Failed Green	killed
+SoullessHorror	AchievementEligibilityMechanic	NecDancer.Achiv.K	kept
+SoullessHorror	AchievementEligibilityMechanic	NecDancer.Achiv.L	lost
 SoullessHorror	EnemyCastEndMechanic	CC.SH Fail	dur>6800
 SoullessHorror	EnemyCastEndMechanic	CCed.SH	dur<=6800
+SpiritRace	AchievementEligibilityMechanic	Outrun.Achiv.K	kept
+SpiritRace	AchievementEligibilityMechanic	Outrun.Achiv.L	lost
 StatueOfDarkness	PlayerCastStartMechanic	Detonate	notinterrupted
 StatueOfDeath	PlayerCastStartMechanic	Light Orb Thrown	notinterrupted
+TempleOfFebe	AchievementEligibilityMechanic	UnbOpt.Achiv.K	kept
+TempleOfFebe	AchievementEligibilityMechanic	UnbOpt.Achiv.L	lost
 TempleOfFebe	PlayerDstHealthDamageHitMechanic	EnrSmash.D	downed
 TwinLargos	PlayerDstHealthDamageHitMechanic	Wave	nostab
+UraTheSteamshrieker	AchievementEligibilityMechanic	Achiv.Hop.K	kept
+UraTheSteamshrieker	AchievementEligibilityMechanic	Achiv.Hop.L	lost
 UraTheSteamshrieker	PlayerDstHealthDamageHitMechanic	FullSteam.H	nostab
 UraTheSteamshrieker	PlayerDstHealthDamageHitMechanic	StnSlam.CC	nostab
 ValeGuardian	EnemyCastEndMechanic	CC.VG Fail	dur>8544
 ValeGuardian	EnemyCastEndMechanic	CCed.VG	dur<=8544
+WhisperingShadow	AchievementEligibilityMechanic	Shatterstep.Achiv.K	kept
+WhisperingShadow	AchievementEligibilityMechanic	Shatterstep.Achiv.L	lost
 Xera	EnemyCastEndMechanic	CC.X Fail	dur>11940
 Xera	EnemyCastEndMechanic	CCed.X	dur<=11940
+XunlaiJadeJunkyard	AchievementEligibilityMechanic	Clarity.Achiv.K	kept
+XunlaiJadeJunkyard	AchievementEligibilityMechanic	Clarity.Achiv.L	lost
+XunlaiJadeJunkyard	AchievementEligibilityMechanic	Undev.Achiv.K	kept
+XunlaiJadeJunkyard	AchievementEligibilityMechanic	Undev.Achiv.L	lost
