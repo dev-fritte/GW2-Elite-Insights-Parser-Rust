@@ -1525,6 +1525,69 @@ impl Fight<'_> {
         phases
     }
 
+    /// Dagda: the groups of tormented split the fight; his own phases are what lies between.
+    fn dagda(&self, main: usize, tormented: &[(i64, i64, i64)]) -> Vec<SubPhase> {
+        let end_of_log = self.duration;
+        // groups of tormented that overlap each other
+        let mut processed = vec![false; tormented.len()];
+        let mut groups: Vec<Vec<(i64, i64, i64)>> = Vec::new();
+        for i in 0..tormented.len() {
+            if processed[i] {
+                continue;
+            }
+            let mut group = Vec::new();
+            let mut reference = tormented[i];
+            for (j, candidate) in tormented.iter().enumerate() {
+                if candidate.0 >= reference.0 && candidate.0 <= reference.1 {
+                    group.push(*candidate);
+                    processed[j] = true;
+                    reference = *candidate;
+                }
+            }
+            groups.push(group);
+        }
+        let mut times: Vec<(i64, i64)> = Vec::new();
+        let mut previous = 0;
+        for (i, group) in groups.iter().enumerate() {
+            let start = group.iter().map(|g| g.0).min().unwrap_or(0).max(0);
+            let stop = group.iter().map(|g| g.2).max().unwrap_or(0).min(end_of_log);
+            times.push((previous, start));
+            times.push((start, stop));
+            previous = stop;
+            if i == groups.len() - 1 {
+                times.push((stop, end_of_log));
+            }
+        }
+        let target = &self.targets[main];
+        let mut phases = Vec::new();
+        for (i, &(start, stop)) in times.iter().enumerate() {
+            let mut phase = SubPhase {
+                start,
+                end: stop,
+                targets: Vec::new(),
+            };
+            if i % 2 == 1 {
+                self.add_targets_of(
+                    &mut phase,
+                    &[
+                        species::VETERAN_THE_TORMENTED,
+                        species::ELITE_THE_TORMENTED,
+                        species::CHAMPION_THE_TORMENTED,
+                    ],
+                );
+            } else if let Some(loss) = self
+                .buff_times_on(target, skill::DAGDA_DURING_PHASE75_50_25, false)
+                .into_iter()
+                .find(|t| (start..=stop).contains(t))
+            {
+                phase.start = loss;
+            }
+            self.add_target(&mut phase, main);
+            phases.push(phase);
+        }
+        phases
+    }
+
     /// Statue of Darkness: from the loss of the first invulnerability each eye has a phase
     /// whenever it is not determined.
     fn statue_of_darkness(&self) -> Vec<SubPhase> {
@@ -1879,6 +1942,8 @@ impl Fight<'_> {
 /// What the phases need to know about agents that are no targets.
 #[derive(Debug, Clone, Default)]
 pub struct Extras {
+    /// The tormented of Dagda as (first, last, end).
+    pub tormented: Vec<(i64, i64, i64)>,
     /// Addresses of the squad players.
     pub players: Vec<u64>,
     /// The first times of the pyre guardians of Qadim.
@@ -1993,6 +2058,7 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::DAGDA => fight.dagda(main, &extras.tormented),
         species::KANAXAI_SCYTHE_OF_HOUSE_AURKUS_CM => fight.kanaxai(main),
         species::VLOXX => fight.nexus(main),
         species::KEEP_CONSTRUCT => fight.keep_construct(main),

@@ -1796,6 +1796,44 @@ pub fn adina_hands(kept: &Kept, offset: i64) -> Vec<Target> {
         .collect()
 }
 
+/// The agents of some species as (first, last, end) with the offset applied, ordered by first
+/// appearance; the end is the last death of the agent if it has one, else its last time.
+#[must_use]
+pub fn species_lifetimes(
+    kept: &Kept,
+    table: AgentTable<'_>,
+    offset: i64,
+    ids: &[u32],
+) -> Vec<(i64, i64, i64)> {
+    let spans = spans(kept);
+    let mut out: Vec<(i64, i64, i64)> = Vec::new();
+    for &id in ids {
+        for agent in species_agents(table, &spans, id) {
+            let death = kept
+                .events
+                .iter()
+                .rev()
+                .find(|e| {
+                    e.state_change == sc::CHANGE_DEAD
+                        && e.src_agent != 0
+                        && *kept
+                            .agent_redirection
+                            .get(&e.src_agent)
+                            .unwrap_or(&e.src_agent)
+                            == agent.address
+                })
+                .map(|e| e.time - offset);
+            out.push((
+                agent.first - offset,
+                agent.last - offset,
+                death.unwrap_or(agent.last - offset),
+            ));
+        }
+    }
+    out.sort_by_key(|o| o.0);
+    out
+}
+
 /// The first times (with the offset applied) of the agents of a species, ordered by first appearance.
 #[must_use]
 pub fn species_first_times(kept: &Kept, table: AgentTable<'_>, offset: i64, id: u32) -> Vec<i64> {
