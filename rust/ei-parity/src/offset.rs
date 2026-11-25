@@ -19,6 +19,10 @@ pub struct OffsetStats {
     pub sub_ok: usize,
     pub sub_compared: usize,
     pub sub_examples: Vec<String>,
+    /// Logs whose target list differs from the reference: the times of the phases only.
+    pub loose_ok: usize,
+    pub loose_compared: usize,
+    pub loose_examples: Vec<String>,
     pub examples: Vec<String>,
 }
 
@@ -105,9 +109,8 @@ pub fn compare_log(
         }
     }
     // sub phases of the encounters that are ported
-    if our_targets == expected_targets
-        && let Some(phases) = &ours.sub_phases
-    {
+    if let Some(phases) = &ours.sub_phases {
+        let strict = our_targets == expected_targets;
         let mut expected: Vec<(i64, i64)> = reference
             .get("phases")
             .and_then(Value::as_array)
@@ -134,12 +137,22 @@ pub fn compare_log(
         let mut mine: Vec<(i64, i64)> = phases.iter().map(|p| (p.start, p.end)).collect();
         expected.sort_unstable();
         mine.sort_unstable();
-        s.sub_compared += 1;
-        if mine == expected {
-            s.sub_ok += 1;
-        } else if s.sub_examples.len() < 3 {
-            s.sub_examples
-                .push(format!("{label}: rust {mine:?} reference {expected:?}"));
+        if strict {
+            s.sub_compared += 1;
+            if mine == expected {
+                s.sub_ok += 1;
+            } else if s.sub_examples.len() < 3 {
+                s.sub_examples
+                    .push(format!("{label}: rust {mine:?} reference {expected:?}"));
+            }
+        } else {
+            s.loose_compared += 1;
+            if mine == expected {
+                s.loose_ok += 1;
+            } else if s.loose_examples.len() < 3 {
+                s.loose_examples
+                    .push(format!("{label}: rust {mine:?} reference {expected:?}"));
+            }
         }
     }
     if (!offset_ok || !duration_ok) && s.examples.len() < 3 {

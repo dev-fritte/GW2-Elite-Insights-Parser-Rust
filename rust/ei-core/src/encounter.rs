@@ -1550,6 +1550,48 @@ pub struct Target {
     pub last: i64,
 }
 
+/// Agents of the species of the encounter that its logic sets to `IgnoredSpecies` or to a species
+/// that is no target: the fake Ensolysses (`Ensolyss.IgnoreFakeEnsolysses`), the dummy Eparchs
+/// (`Eparch.EIEvtcParse`) and the flux anomalies of Skorvald that gain determined
+/// (`Skorvald.DetectUnknownAnomalies`).
+fn ignored_agent(kept: &Kept, address: u64, species: i32) -> bool {
+    use species::target_id as id;
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    let of_agent =
+        |e: &evtc_ingest::CombatRecord| e.src_agent != 0 && redirect(e.src_agent) == address;
+    match (i32::from(kept.trigger_id), species) {
+        (t, s) if t == id::ENSOLYSS && s == id::ENSOLYSS => {
+            // only agents that ever had at least 7 million health are Ensolyss
+            !kept.events.iter().any(|e| {
+                e.state_change == sc::MAX_HEALTH_UPDATE && of_agent(e) && e.dst_agent >= 7_000_000
+            })
+        }
+        (t, s) if t == id::EPARCH_LONELY_TOWER && s == id::EPARCH_LONELY_TOWER => {
+            // an Eparch that never casts (apart from drawing and stowing the weapon) is a dummy
+            !kept.events.iter().any(|e| {
+                e.state_change == sc::ANIMATION_START
+                    && of_agent(e)
+                    && !matches!(
+                        i64::from(e.skill_id),
+                        skill::WEAPON_DRAW | skill::WEAPON_STOW
+                    )
+            })
+        }
+        (t, s) if t == id::SKORVALD && FLUX_ANOMALIES.contains(&s) => kept.events.iter().any(|e| {
+            e.state_change == sc::BUFF_APPLY
+                && i64::from(e.skill_id) == skill::DETERMINED762
+                && e.dst_agent != 0
+                && redirect(e.dst_agent) == address
+        }),
+        _ => false,
+    }
+}
+
+/// The flux anomalies of Skorvald.
+const FLUX_ANOMALIES: [i32; 8] = [
+    17_578, 17_929, 17_695, 17_651, 17_599, 17_770, 17_851, 17_673,
+];
+
 /// The targets of the encounter: the agents of the species its logic lists, ordered by first
 /// appearance and then by the sort keys of the logic (`LogLogic.ComputeLogTargets`).
 ///
@@ -1633,7 +1675,7 @@ pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
         let Some(&(first, last)) = spans.get(&agent.address()) else {
             continue;
         };
-        if logic.targets.contains(&species) {
+        if logic.targets.contains(&species) && !ignored_agent(kept, agent.address(), species) {
             candidates.push((
                 Target {
                     address: agent.address(),
