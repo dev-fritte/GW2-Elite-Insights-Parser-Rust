@@ -1074,6 +1074,106 @@ impl Fight<'_> {
         phases
     }
 
+    /// The first direct hit a squad player does to the target at or after `from`.
+    fn first_player_hit(&self, target: &Target, from: i64, players: &[u64]) -> Option<i64> {
+        self.kept
+            .events
+            .iter()
+            .filter(|e| {
+                e.state_change == sc::COMBAT
+                    && e.is_buff == 0
+                    && e.dst_agent != 0
+                    && target.addresses.contains(&self.redirect(e.dst_agent))
+                    && e.src_agent != 0
+                    && players.contains(&self.redirect(e.src_agent))
+                    && crate::damage::health_damage(e) > 0
+            })
+            .map(|e| e.time - self.offset)
+            .find(|&t| t >= from)
+    }
+
+    /// The phases of one of the twin largos: from entering combat to the next invulnerability or
+    /// death, with a fallback for the missing enter combat records.
+    fn largos_target(&self, index: usize, first_at_zero: bool, players: &[u64]) -> Vec<SubPhase> {
+        let target = &self.targets[index];
+        let mut states: Vec<(i64, u8)> = self
+            .of_target(target, &[sc::ENTER_COMBAT, sc::CHANGE_DEAD])
+            .map(|e| (e.time - self.offset, e.state_change))
+            .collect();
+        states.extend(
+            self.invuln_sequence(&[skill::DETERMINED762], target, true)
+                .into_iter()
+                .filter(|s| s.1)
+                .map(|s| (s.0, sc::BUFF_APPLY)),
+        );
+        states.sort_by_key(|s| s.0);
+        let end = self.duration;
+        let mut phases: Vec<(i64, i64)> = Vec::new();
+        let mut phase_start = 0;
+        for (i, &(time, state)) in states.iter().enumerate() {
+            let last = i == states.len() - 1;
+            if state == sc::ENTER_COMBAT {
+                phase_start = time.max(0);
+                if last {
+                    phases.push((phase_start, end));
+                }
+            } else {
+                let phase_end = time.min(end);
+                phases.push((phase_start, phase_end));
+                if last && phases.len() < 3 {
+                    phases.push((phase_end.max(0), end));
+                }
+            }
+        }
+        phases.retain(|p| p.1 - p.0 >= PHASE_TIME_LIMIT);
+        // clean the missing enter combat records
+        let fallback = |from: i64| self.first_player_hit(target, from, players);
+        match phases.len() {
+            2 if phases[0].0 == phases[1].0 => {
+                phases[1].0 = fallback(phases[0].1 + 5000).unwrap_or(phases[0].1);
+            }
+            3 => {
+                if phases[0].0 == phases[1].0 {
+                    phases[1].0 = fallback(phases[0].1 + 5000).unwrap_or(phases[0].1);
+                }
+                if phases[0].0 == phases[2].0 || phases[1].0 == phases[2].0 {
+                    phases[2].0 = fallback(phases[1].1 + 5000).unwrap_or(phases[1].1);
+                }
+            }
+            _ => {}
+        }
+        if !first_at_zero && phases.first().is_some_and(|p| p.0 == 0) {
+            if let Some(hit) = fallback(0) {
+                phases[0].0 = hit;
+            }
+        }
+        phases
+            .into_iter()
+            .map(|(start, stop)| {
+                let mut phase = SubPhase {
+                    start,
+                    end: stop,
+                    targets: Vec::new(),
+                };
+                self.add_target(&mut phase, index);
+                phase
+            })
+            .collect()
+    }
+
+    /// The twin largos: the phases of Nikare and of Kenut.
+    fn twin_largos(&self, nikare: usize, players: &[u64]) -> Vec<SubPhase> {
+        let mut phases = self.largos_target(nikare, true, players);
+        if let Some(kenut) = self
+            .targets
+            .iter()
+            .position(|t| t.species == species::KENUT)
+        {
+            phases.extend(self.largos_target(kenut, false, players));
+        }
+        phases
+    }
+
     /// Statue of Darkness: from the loss of the first invulnerability each eye has a phase
     /// whenever it is not determined.
     fn statue_of_darkness(&self) -> Vec<SubPhase> {
@@ -1428,6 +1528,8 @@ impl Fight<'_> {
 /// What the phases need to know about agents that are no targets.
 #[derive(Debug, Clone, Default)]
 pub struct Extras {
+    /// Addresses of the squad players.
+    pub players: Vec<u64>,
     /// The first times of the pyre guardians of Qadim.
     pub pyre_starts: Vec<i64>,
     /// Agents of volatile species that are no regular targets (the lamps of Qadim, the hands of
@@ -1540,6 +1642,7 @@ pub fn encounter_phases(
             phases
         }
         species::CERUS => fight.cerus(main),
+        species::NIKARE => fight.twin_largos(main, &extras.players),
         species::VOICE_OF_THE_FALLEN => fight.kodan(main),
         species::ADINA => fight.adina(main),
         species::EYE_OF_FATE => fight.statue_of_darkness(),

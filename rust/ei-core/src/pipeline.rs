@@ -452,6 +452,7 @@ pub fn analyze_offset(data: &[u8]) -> Result<OffsetAnalysis, AnalysisError> {
             offset.unwrap_or(0),
             duration,
             &crate::subphases::Extras {
+                players: addresses.clone(),
                 extra_targets: {
                     let mut extra =
                         crate::encounter::qadim_lamps(&kept, evtc.agents(), offset.unwrap_or(0));
