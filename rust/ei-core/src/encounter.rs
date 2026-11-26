@@ -627,6 +627,27 @@ fn first_damage_time(c: &Ctx<'_>, target: &Agent) -> i64 {
         .map_or(target.first, |e| e.time)
 }
 
+/// `StatueOfDeath.GetLogOffset`: with a log start update the last time of the Ascalonian peasants,
+/// else the first damage event of the Eater of Souls.
+fn statue_of_death_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    let eater = c.agent(species::target_id::EATER_OF_SOULS)?;
+    if c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE)
+        .is_none()
+    {
+        return Ok(0);
+    }
+    let peasants = [
+        species::target_id::ASCALONIAN_PEASANT1,
+        species::target_id::ASCALONIAN_PEASANT2,
+    ]
+    .into_iter()
+    .filter_map(|id| u32::try_from(id).ok())
+    .flat_map(|id| species_agents(c.table, c.spans, id))
+    .map(|a| a.last)
+    .max();
+    Ok(peasants.unwrap_or_else(|| first_damage_time(c, &eater)))
+}
+
 /// `StatueOfIce.GetLogOffset`: the first cast of the Broken King.
 fn broken_king_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
     let king = c.agent(species::target_id::BROKEN_KING)?;
@@ -873,6 +894,7 @@ fn rule_for(trigger_id: u16) -> Option<Rule> {
         27124 => kela_offset,
         id::VLOXX => vloxx_offset,
         id::BROKEN_KING => broken_king_offset,
+        id::EATER_OF_SOULS => statue_of_death_offset,
         id::QADIM => qadim_offset,
         id::PROTOTYPE_VERMILION | id::PROTOTYPE_VERMILION_CM => old_lions_court_offset,
         id::ETHEREAL_BARRIER_GADGET => spirit_race_offset,
