@@ -28,6 +28,7 @@ ConjuredAmalgamate	SubMechanic	Stab.Slam	sub:Arm Slam:stab
 CosmicObservatory	AchievementEligibilityMechanic	DancStars.Achiv.K	kept
 CosmicObservatory	AchievementEligibilityMechanic	DancStars.Achiv.L	lost
 CosmicObservatory	EnemyDstBuffApplyMechanic	Planet Crash (Int)	species:to=25705
+CosmicObservatory	EnemyDstBuffRemoveSingleMechanic	DemAur.L	byplayer
 CosmicObservatory	PlayerDstBuffApplyMechanic	Sl.Fst.T	species:by=25705
 CosmicObservatory	PlayerSrcHealthDamageHitMechanic	PurLight.Dagda.C	species:to=25705
 CosmicObservatory	PlayerSrcHealthDamageHitMechanic	PurLight.Soul.C	species:to=26069
@@ -51,6 +52,8 @@ Dhuum	PlayerDstHealthDamageHitMechanic	Shackles dmg	damage
 Ensolyss	EnemyCastEndMechanic	CC.E Fail	dur>=15260
 Ensolyss	EnemyCastEndMechanic	CCed	dur<15260
 Escort	PlayerDstHealthDamageMechanic	Mine.H	species:by=-35
+FractalLogic	PlayerDstBuffApplyMechanic	ToxSick.HitBy	byplayer
+FractalLogic	PlayerSrcBuffApplyMechanic	ToxSick.HitTo	toplayer
 FraenirOfJormag	PlayerDstHealthDamageHitMechanic	FrozenMissile.CC	nostab
 FraenirOfJormag	PlayerDstHealthDamageHitMechanic	Ice Shock Wave	nostab
 FraenirOfJormag	PlayerDstHealthDamageHitMechanic	IceArmSwing.CC	nostab
@@ -77,6 +80,7 @@ GuardiansGlade	AchievementEligibilityMechanic	Achiv.Sand.K	kept
 GuardiansGlade	AchievementEligibilityMechanic	Achiv.Sand.L	lost
 GuardiansGlade	EnemySrcHealthDamageMechanic	Ate Artifact	species:to=27663
 GuardiansGlade	EnemySrcHealthDamageMechanic	Ate Croc	species:to=27658
+GuardiansGlade	EnemySrcHealthDamageMechanic	Ate Player	toplayer
 GuardiansGlade	SubMechanic	ClawSlam.CC	sub:ClawSlam.H:nostab
 GuardiansGlade	SubMechanic	CrocTackle.CC	sub:CrocTackle.H:nostab
 GuardiansGlade	SubMechanic	LightStk.CC	sub:LightStk.H:nostab
@@ -191,6 +195,7 @@ UraTheSteamshrieker	AchievementEligibilityMechanic	Achiv.Hop.K	kept
 UraTheSteamshrieker	AchievementEligibilityMechanic	Achiv.Hop.L	lost
 UraTheSteamshrieker	PlayerDstHealthDamageHitMechanic	FullSteam.H	nostab
 UraTheSteamshrieker	PlayerDstHealthDamageHitMechanic	StnSlam.CC	nostab
+UraTheSteamshrieker	PlayerSrcBuffRemoveFromMechanic	Dispel.P	toplayer
 UraTheSteamshrieker	PlayerSrcBuffRemoveFromMechanic	Dispel.Sulf	species:to=-63
 UraTheSteamshrieker	PlayerSrcBuffRemoveFromMechanic	Dispel.Titn	species:to=26741,-93
 UraTheSteamshrieker	PlayerSrcBuffRemoveFromMechanic	Dispel.Toxc	species:to=-62

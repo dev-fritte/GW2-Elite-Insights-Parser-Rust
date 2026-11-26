@@ -594,28 +594,11 @@ pub fn encounter_mechanics(
     let achievements = achievement_events(kept, players, &spans, &active, fight, trigger_id, &defs);
     let enemy_names = enemy_names(kept, table, targets, offset);
     let species = species_of_agents(table, &enemy_names);
-    let uses = |kinds: &[Kind]| defs.iter().any(|m| kinds.contains(&m.kind));
-    let casts = if uses(&[
-        Kind::EnemyCastStart,
-        Kind::EnemyCastEnd,
-        Kind::PlayerCastStart,
-    ]) {
-        all_casts(kept, players, &enemy_names)
-    } else {
-        Vec::new()
-    };
-    let effects = if uses(&[
-        Kind::PlayerDstEffect,
-        Kind::PlayerSrcEffect,
-        Kind::EnemySrcEffect,
-    ]) {
-        effect_records(kept)
-    } else {
-        Vec::new()
-    };
+    let (casts, effects) = casts_and_effects(kept, players, &defs, &enemy_names);
     let lookup = Lookup {
         names: &enemy_names,
         effects: &effects,
+        players,
         table,
         casts: &casts,
         species: &species,
@@ -644,6 +627,11 @@ pub fn encounter_mechanics(
                 events: player_effect_events(m, &effects, fight, &index_of),
                 enemies: Vec::new(),
             },
+            Kind::PlayerSrcBuffRemoveSingleFrom | Kind::PlayerSrcBuffRemoveFrom => MechanicRow {
+                name: m.name,
+                events: player_removal_events(kept, m, fight, &index_of),
+                enemies: Vec::new(),
+            },
             Kind::PlayerSrcHit
             | Kind::PlayerSrcAllHit
             | Kind::PlayerCastStart
@@ -659,6 +647,7 @@ pub fn encounter_mechanics(
             },
             Kind::EnemyDstBuffApply
             | Kind::EnemyDstBuffRemove
+            | Kind::EnemyDstBuffRemoveSingle
             | Kind::EnemyCastStart
             | Kind::EnemyCastEnd
             | Kind::EnemySrcEffect
@@ -709,6 +698,43 @@ fn player_effect_events(
                 f.src
             };
             Some((f.time - fight.offset, index_of(agent)?))
+        })
+        .filter(|(time, _)| (0..=fight.duration).contains(time))
+        .collect()
+}
+
+/// How many stacks a record removes: the stacks of a removal of all, one for a removal of a
+/// single stack, none for anything else.
+fn removed_stacks(e: &evtc_ingest::CombatRecord) -> usize {
+    match e.state_change {
+        sc::BUFF_REMOVE_ALL => usize::from(e.result),
+        sc::BUFF_REMOVE_SINGLE if e.is_buff_remove == 2 => 1,
+        _ => 0,
+    }
+}
+
+/// The events of the mechanics on what a player removed from agents: the player is the source of
+/// the removal (the target of its record).
+fn player_removal_events(
+    kept: &Kept,
+    m: &ei_data::mechanics::Mechanic,
+    fight: Fight,
+    index_of: &dyn Fn(u64) -> Option<usize>,
+) -> Vec<(i64, usize)> {
+    let single = m.kind == ei_data::mechanics::Kind::PlayerSrcBuffRemoveSingleFrom;
+    kept.events
+        .iter()
+        .filter(|e| m.ids.contains(&i64::from(e.skill_id)) && e.dst_agent != 0)
+        .filter(|e| {
+            single
+                || (e.state_change == sc::BUFF_REMOVE_ALL
+                    && (m.filter != ei_data::mechanics::Filter::ToPlayer
+                        || index_of(e.src_agent).is_some()))
+        })
+        .filter_map(|e| Some((e, index_of(e.dst_agent)?)))
+        .flat_map(|(e, i)| {
+            let count = if single { removed_stacks(e) } else { 1 };
+            std::iter::repeat_n((e.time - fight.offset, i), count)
         })
         .filter(|(time, _)| (0..=fight.duration).contains(time))
         .collect()
@@ -814,6 +840,8 @@ impl<'a> BuffLookup<'a> {
 
 /// What the mechanics on enemies look up.
 struct Lookup<'a> {
+    /// The players of the squad.
+    players: &'a [Player],
     /// The effect records.
     effects: &'a [Effect],
     /// The agents, to tell the ones without a name.
@@ -850,6 +878,36 @@ fn species_of_agents(
         }
     }
     species
+}
+
+/// The animated casts and the effects, as far as the mechanics need them.
+fn casts_and_effects(
+    kept: &Kept,
+    players: &[Player],
+    defs: &[&ei_data::mechanics::Mechanic],
+    enemy_names: &HashMap<u64, String>,
+) -> (Vec<EnemyCast>, Vec<Effect>) {
+    use ei_data::mechanics::Kind;
+    let uses = |kinds: &[Kind]| defs.iter().any(|m| kinds.contains(&m.kind));
+    let casts = if uses(&[
+        Kind::EnemyCastStart,
+        Kind::EnemyCastEnd,
+        Kind::PlayerCastStart,
+    ]) {
+        all_casts(kept, players, enemy_names)
+    } else {
+        Vec::new()
+    };
+    let effects = if uses(&[
+        Kind::PlayerDstEffect,
+        Kind::PlayerSrcEffect,
+        Kind::EnemySrcEffect,
+    ]) {
+        effect_records(kept)
+    } else {
+        Vec::new()
+    };
+    (casts, effects)
 }
 
 /// The animated casts of the enemies and the players.
@@ -956,79 +1014,23 @@ fn enemy_events(
     lookup: &Lookup<'_>,
 ) -> Vec<(i64, String)> {
     use ei_data::mechanics::Kind;
-    let Lookup {
-        effects,
-        table: agents,
-        names,
-        casts,
-        species,
-        has_buff,
-    } = *lookup;
-    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
-    let mut events: Vec<(i64, String)> = if m.kind == Kind::Spawn {
-        m.ids
+    let names = lookup.names;
+    let mut events: Vec<(i64, String)> = match m.kind {
+        Kind::Spawn => m
+            .ids
             .iter()
             .flat_map(|&id| crate::encounter::species_first_seen(kept, table, id))
             .filter_map(|(address, first)| {
                 Some((first - fight.offset, names.get(&address)?.clone()))
             })
-            .collect()
-    } else if m.kind == Kind::EnemySrcEffect {
-        effects
-            .iter()
-            .filter(|f| m.guids.contains(&f.guid))
-            .filter_map(|f| {
-                let name = names.get(&f.src).cloned().or_else(|| {
-                    // agents without a name stand for the environment
-                    let unnamed = agents
-                        .iter()
-                        .find(|a| a.address() == f.src)
-                        .is_none_or(|a| a.name().starts_with('\0') || a.name().is_empty());
-                    unnamed.then(|| ENVIRONMENT.to_owned())
-                })?;
-                Some((f.time - fight.offset, name))
-            })
-            .collect()
-    } else if matches!(m.kind, Kind::EnemyDstBuffApply | Kind::EnemyDstBuffRemove) {
-        kept.events
-            .iter()
-            .filter_map(|e| {
-                let removal = e.state_change == sc::BUFF_REMOVE_ALL;
-                let wanted = m.ids.contains(&i64::from(e.skill_id))
-                    && if m.kind == Kind::EnemyDstBuffApply {
-                        matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
-                    } else {
-                        removal
-                    };
-                let agent = if removal { e.src_agent } else { e.dst_agent };
-                if !wanted || agent == 0 {
-                    return None;
-                }
-                let other = if removal { e.dst_agent } else { e.src_agent };
-                if !species_ok(m.filter, species, |side| {
-                    redirect(if side == Side::To { agent } else { other })
-                }) {
-                    return None;
-                }
-                if let ei_data::mechanics::Filter::SpeciesBuff {
-                    species: wanted,
-                    buff,
-                    present,
-                    delay,
-                } = m.filter
-                {
-                    let target = redirect(agent);
-                    let is_species = species.get(&target).is_some_and(|s| *s == wanted);
-                    let time = e.time - fight.offset - delay;
-                    if !is_species || has_buff(target, buff, time) != present {
-                        return None;
-                    }
-                }
-                Some((e.time - fight.offset, names.get(&redirect(agent))?.clone()))
-            })
-            .collect()
-    } else {
-        casts
+            .collect(),
+        Kind::EnemyDstBuffRemoveSingle => enemy_stack_removals(kept, m, fight, lookup),
+        Kind::EnemySrcEffect => enemy_effect_events(m, fight, lookup),
+        Kind::EnemyDstBuffApply | Kind::EnemyDstBuffRemove => {
+            enemy_buff_events(kept, m, fight, lookup)
+        }
+        _ => lookup
+            .casts
             .iter()
             .filter(|c| {
                 names.contains_key(&c.address)
@@ -1043,10 +1045,111 @@ fn enemy_events(
                 };
                 (time - fight.offset, c.caster.clone())
             })
-            .collect()
+            .collect(),
     };
     events.retain(|(time, _)| (0..=fight.duration).contains(time));
     events
+}
+
+/// The removals of single stacks of a buff from enemies, one event per stack.
+fn enemy_stack_removals(
+    kept: &Kept,
+    m: &ei_data::mechanics::Mechanic,
+    fight: Fight,
+    lookup: &Lookup<'_>,
+) -> Vec<(i64, String)> {
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    kept.events
+        .iter()
+        .filter(|e| m.ids.contains(&i64::from(e.skill_id)))
+        .filter(|e| {
+            m.filter != ei_data::mechanics::Filter::ByPlayer
+                || lookup
+                    .players
+                    .iter()
+                    .any(|p| p.address == redirect(e.dst_agent))
+        })
+        .filter_map(|e| Some((e, lookup.names.get(&redirect(e.src_agent))?)))
+        .flat_map(|(e, name)| {
+            std::iter::repeat_n((e.time - fight.offset, name.clone()), removed_stacks(e))
+        })
+        .collect()
+}
+
+/// The effects enemies or the environment created.
+fn enemy_effect_events(
+    m: &ei_data::mechanics::Mechanic,
+    fight: Fight,
+    lookup: &Lookup<'_>,
+) -> Vec<(i64, String)> {
+    lookup
+        .effects
+        .iter()
+        .filter(|f| m.guids.contains(&f.guid))
+        .filter_map(|f| {
+            let name = lookup.names.get(&f.src).cloned().or_else(|| {
+                // agents without a name stand for the environment
+                let unnamed = lookup
+                    .table
+                    .iter()
+                    .find(|a| a.address() == f.src)
+                    .is_none_or(|a| a.name().starts_with('\0') || a.name().is_empty());
+                unnamed.then(|| ENVIRONMENT.to_owned())
+            })?;
+            Some((f.time - fight.offset, name))
+        })
+        .collect()
+}
+
+/// The buffs applied to enemies or removed from them (all stacks at once).
+fn enemy_buff_events(
+    kept: &Kept,
+    m: &ei_data::mechanics::Mechanic,
+    fight: Fight,
+    lookup: &Lookup<'_>,
+) -> Vec<(i64, String)> {
+    use ei_data::mechanics::{Filter, Kind};
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    kept.events
+        .iter()
+        .filter_map(|e| {
+            let removal = e.state_change == sc::BUFF_REMOVE_ALL;
+            let wanted = m.ids.contains(&i64::from(e.skill_id))
+                && if m.kind == Kind::EnemyDstBuffApply {
+                    matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+                } else {
+                    removal
+                };
+            let agent = if removal { e.src_agent } else { e.dst_agent };
+            if !wanted || agent == 0 {
+                return None;
+            }
+            let other = if removal { e.dst_agent } else { e.src_agent };
+            if !species_ok(m.filter, lookup.species, |side| {
+                redirect(if side == Side::To { agent } else { other })
+            }) {
+                return None;
+            }
+            if let Filter::SpeciesBuff {
+                species: wanted,
+                buff,
+                present,
+                delay,
+            } = m.filter
+            {
+                let target = redirect(agent);
+                let is_species = lookup.species.get(&target).is_some_and(|s| *s == wanted);
+                let time = e.time - fight.offset - delay;
+                if !is_species || (lookup.has_buff)(target, buff, time) != present {
+                    return None;
+                }
+            }
+            Some((
+                e.time - fight.offset,
+                lookup.names.get(&redirect(agent))?.clone(),
+            ))
+        })
+        .collect()
 }
 
 /// Achievement events (time, player index, lost) per (trigger id, achievement id).

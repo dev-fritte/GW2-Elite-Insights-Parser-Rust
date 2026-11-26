@@ -26,6 +26,9 @@ $kinds = @{
     'PlayerSrcHealthDamageHitMechanic' = 'PlayerSrcHit'
     'PlayerCastStartMechanic' = 'PlayerCastStart'
     'PlayerSrcBuffApplyMechanic' = 'PlayerSrcBuffApply'
+    'PlayerSrcBuffRemoveSingleFromMechanic' = 'PlayerSrcBuffRemoveSingleFrom'
+    'PlayerSrcBuffRemoveFromMechanic' = 'PlayerSrcBuffRemoveFrom'
+    'EnemyDstBuffRemoveSingleMechanic' = 'EnemyDstBuffRemoveSingle'
     'PlayerSrcAllHealthDamageHitsMechanic' = 'PlayerSrcAllHit'
     'PlayerDstEffectMechanic' = 'PlayerDstEffect'
     'PlayerSrcEffectMechanic' = 'PlayerSrcEffect'
@@ -38,6 +41,9 @@ $allowed = @{
     'PlayerDstHit' = @('', 'nostab', 'damage', 'species', 'buff')
     'PlayerDstBuffApply' = @('', 'applied', 'species')
     'PlayerSrcBuffApply' = @('', 'species')
+    'PlayerSrcBuffRemoveSingleFrom' = @('')
+    'PlayerSrcBuffRemoveFrom' = @('toplayer')
+    'EnemyDstBuffRemoveSingle' = @('byplayer')
     'PlayerSrcAllHit' = @('species')
     'Spawn' = @('')
     'EnemyDstBuffRemove' = @('', 'species')
@@ -71,6 +77,8 @@ function Get-FilterExpr([string]$code) {
         '^species:(to|by)=([-0-9,]+)(&direct)?$' { return "Filter::Species(Side::$(if ($Matches[1] -eq 'to') { 'To' } else { 'By' }), &[$($Matches[2])])" }
         '^speciesbuff:(\d+),(\d+),(has|no),(\d+)$' { return "Filter::SpeciesBuff { species: $($Matches[1]), buff: $($Matches[2]), present: $(if ($Matches[3] -eq 'has') { 'true' } else { 'false' }), delay: $($Matches[4]) }" }
         '^buff:([0-9]+),(has|no),([0-9]+),([0-9]+)$' { return "Filter::TargetBuff { buff: $($Matches[1]), present: $(if ($Matches[2] -eq 'has') { 'true' } else { 'false' }), delay: $($Matches[3]), window: $($Matches[4]) }" }
+        '^byplayer$' { return 'Filter::ByPlayer' }
+        '^toplayer$' { return 'Filter::ToPlayer' }
         '^interrupted$' { return 'Filter::Interrupted' }
         '^notinterrupted$' { return 'Filter::NotInterrupted' }
         '^dur>=(\d+)$' { return "Filter::DurationAtLeast($($Matches[1]))" }
@@ -109,6 +117,12 @@ L '    /// All stacks of a buff are removed from an enemy (`EnemyDstBuffRemoveMe
 L '    EnemyDstBuffRemove,'
 L '    /// All stacks of a buff are removed from a player (`PlayerDstBuffRemoveMechanic`).'
 L '    PlayerDstBuffRemove,'
+L '    /// One stack of a buff a player removed, counted per stack (`PlayerSrcBuffRemoveSingleFromMechanic`).'
+L '    PlayerSrcBuffRemoveSingleFrom,'
+L '    /// All stacks of a buff a player removed (`PlayerSrcBuffRemoveFromMechanic`).'
+L '    PlayerSrcBuffRemoveFrom,'
+L '    /// One stack of a buff removed from an enemy, counted per stack (`EnemyDstBuffRemoveSingleMechanic`).'
+L '    EnemyDstBuffRemoveSingle,'
 L '    /// A direct hit of a player with any skill (`PlayerSrcAllHealthDamageHitsMechanic`); the filter names the species hit.'
 L '    PlayerSrcAllHit,'
 L '    /// A hit of a player with one of the skills (`PlayerSrcHealthDamageHitMechanic`).'
@@ -165,6 +179,10 @@ L '    /// The buff was applied for exactly so long in ms (`AppliedDuration == n
 L '    AppliedDuration(i64),'
 L '    /// The cast was interrupted.'
 L '    Interrupted,'
+L '    /// The agent that removed the buff is a player (`CreditedBy.IsPlayer`).'
+L '    ByPlayer,'
+L '    /// The agent the buff was removed from is a player (`To.IsPlayer`).'
+L '    ToPlayer,'
 L '    /// The cast was not interrupted.'
 L '    NotInterrupted,'
 L '    /// An agent of one of the species (the mechanic ids stay the skill or buff ids) is the target or the source.'

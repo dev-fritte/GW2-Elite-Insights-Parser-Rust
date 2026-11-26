@@ -74,6 +74,8 @@ function classify(chain) {
   if (checkers.length !== 1) return null;
   const [name, a] = checkers[0];
   let m;
+  // the remover is a player (or a minion of one), or the removed from agent is one
+  if ((m = /^[(][A-Za-z0-9_]+, *log[)] *=> *[A-Za-z0-9_]+[.](CreditedBy|By|To)[.]IsPlayer$/.exec(a))) return m[1] === 'To' ? 'toplayer' : 'byplayer';
   // a direct hit on an agent of one or two species
   if ((m = /^[(][A-Za-z0-9_]+, *log[)] *=> *[(]?[A-Za-z0-9_]+[.]To[.]IsSpecies[(]TargetID[.]([A-Za-z0-9_]+)[)](?: *[|][|] *[A-Za-z0-9_]+[.]To[.]IsSpecies[(]TargetID[.]([A-Za-z0-9_]+)[)])?[)]? *&& *[A-Za-z0-9_]+ is DirectHealthDamageEvent$/.exec(a))) {
     const ids = [m[1], m[2]].filter(Boolean).map(n => targetIds.get(n));
