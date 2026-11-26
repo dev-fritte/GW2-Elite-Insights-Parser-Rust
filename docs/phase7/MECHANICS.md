@@ -33,6 +33,10 @@ Zeiten sind relativ zum Kampfbeginn, nur Ereignisse im Kampf zählen.
 | `EnemyCastStartMechanic` | 91 | Beginn eines animierten Zaubers eines Gegners |
 | `EnemyCastEndMechanic` | 5 | Ende (Beginn + tatsächliche Dauer) eines animierten Zaubers eines Gegners |
 | `EnemyDstBuffApplyMechanic` | 84 | Buff-Anwendung (auch Anfangszustand) auf einen Gegner |
+| `SpawnMechanic` | 18 | erstes Auftreten der Agenten der Spezies (Gegner) |
+| `EnemyDstBuffRemoveMechanic`, `PlayerDstBuffRemoveMechanic` | 5, 4 | Entfernen aller Stapel (Datensatz "Entfernen alle"; betroffen ist die Quelle des Datensatzes, nicht das Ziel) von einem Gegner, von einem Spieler |
+| `PlayerSrcHealthDamageHitMechanic` | 10 | Treffer eines Spielers mit der Fertigkeit |
+| `PlayerCastStartMechanic` | 8 | Beginn eines animierten Zaubers eines Spielers (Zauber mit höchstens 1 ms fallen weg; negative Ids sind Interaktionen und Gesten, keine Zauber) |
 
 Gegner sind die Ziele der Logik und die Trash-Mobs ihrer Spezies-Liste (`GetTrashMobsIDs`, schon in `ei-data/targets`). Die animierten Zauber werden wie `CombatEventFactory.CreateCastEvents` gepaart: ein Beginn mit dem nächsten Ende derselben Fertigkeit (weicht die Dauer um mehr als 10 ms von der Zeit zwischen den Datensätzen ab, zählt diese), ein Beginn ohne Ende dauert die erwartete Zeit, höchstens bis zum Beginn des nächsten Zaubers des Wirkenden plus 10 ms, ein Ende ohne Beginn nur, wenn der Zauber vor dem Log begann. Nur Logs mit den Datensätzen für Animationsbeginn und -ende (arcdps ab 2019) sind ausgewertet.
 
@@ -46,7 +50,8 @@ Lambdas lassen sich nicht per Reflexion lesen. `node tools/gen/Extract-Checkers.
 | `damage` (5) | Treffer auf Spieler | Schaden über 0 (Direktschaden `value`, Buff-Schaden `buff_dmg`) |
 | `killed`, `downed`, `downedorkilled` (15) | beliebiges Schadensereignis auf Spieler | Ergebnis 8 (Todesstoß) oder 9 (Niedergang); anders als bei Treffern zählt jedes Ereignis mit der Fertigkeit |
 | `dur>=n`, `dur>n`, `dur<n`, `dur<=n` (32) | Zauberende, Zauberbeginn von Gegnern | tatsächliche Dauer des Zaubers |
-| `interrupted`, `notinterrupted` (3) | Zauberende von Gegnern | Endedatensatz mit Aktivierung 4 (Abbruch) |
+| `interrupted`, `notinterrupted` (6) | Zauberbeginn und -ende | Endedatensatz mit Aktivierung 4 (Abbruch) |
+| `applied=n` (3) | Buff auf Spieler | angewendete Dauer genau n ms |
 
 ### Erfolgsbedingungen
 
@@ -58,13 +63,13 @@ Nicht portiert, weil sie eigene Berechnungen haben (mehrere Kämpfe, Buffs): Qad
 
 Die Abklingzeit (ICD) gilt nur im HTML, nicht im JSON, und wird deshalb nicht angewendet. Die Spielerliste ist wie in C# auf aktive Spieler beschränkt.
 
-Noch ohne Auswertung (ohne Zusatz oder mit einer bekannten Prüfung): `PlayerSrcHit` (11), `PlayerCastStart` (10), `SpawnMechanic` (18), `SubMechanic` (27), `EnemyDstBuffRemove` (6), `EnemyStatus` (10) und kleinere Typen. Mit anderem Zusatz (Lambda anderer Form, Untermechanik usw.) sind noch rund 400 Einträge aller Typen, darunter die Erfolgsbedingungen ohne Vorlage (siehe oben); sie brauchen je Mechanik Code.
+Noch ohne Auswertung: `SubMechanic` (27), `EnemyStatus` (10), die Effekt-Mechaniken (`PlayerDstEffect` und andere, nur bei vorhandenen Effektdaten freigegeben) und kleinere Typen. Mit anderem Zusatz (Lambda anderer Form, Untermechanik usw.) sind noch rund 400 Einträge aller Typen, darunter die Erfolgsbedingungen ohne Vorlage (siehe oben); sie brauchen je Mechanik Code.
 
 ## Messung (103 Korpus-Logs)
 
-Encounter-Mechaniken auf Spielern aus Daten: 1.419 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **15 Abweichungen**, alle aus den bekannten Zeitursachen (Deimos Kampfende 9, Seelenverzehrer Kampfbeginn 3, Drachenleere Kampfende 3).
+Encounter-Mechaniken auf Spielern aus Daten: 1.473 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **16 Abweichungen**, alle aus den bekannten Zeitursachen (Deimos Kampfende 10, Seelenverzehrer Kampfbeginn 3, Drachenleere Kampfende 3).
 
-Mechaniken auf Gegnern: 203 Vergleiche der Zeiten, **1 Abweichung** (Deimos Kampfende). Die Namen der Gegner entsprechen denen von C# (`enemy_names` in `mechanics.rs`): Gleichnamige Ziele werden wie `NumericallyRenameSpecies` mit einer Zahl versehen; danach folgen die Umbenennungen der Logiken, die sich aus dem Log ergeben (Cerus: "Empowered …" bei dem Buff beim Auftauchen und "… (Permanent)" für Verkörperungen, die mit Cerus auftauchen und eine eigene Zählung haben; Deimos: Dieb, Trunkenbold, Spieler; Greer: "Godspoil Greer" mit Ereg; Ura: "Ura, the Steamshrieker" oder "Godscream Ura" nach den Lebenspunkten, vor arcdps 2026-09-29 "Elite/Champion/Legendary" für die Adds; Ai: "Elemental Ai, Keeper of the Peak") und zuletzt der Rang aus den Agenten-Informationen ("Veteran ", "Elite ", "Champion ", "Legendary "; arcdps ab 2026-09-29). Nicht portiert: die dunkle Ai, die Instanz Sunqua Peak, die Namen der übrigen Logiken (Splitter, Herzen, Phasen-Ziele, Xera und andere) und die Gemeinschaftsfarben der Trash-Mobs.
+Mechaniken auf Gegnern: 216 Vergleiche der Zeiten, **1 Abweichung** (Deimos Kampfende). Die Namen der Gegner entsprechen denen von C# (`enemy_names` in `mechanics.rs`): Gleichnamige Ziele werden wie `NumericallyRenameSpecies` mit einer Zahl versehen; danach folgen die Umbenennungen der Logiken, die sich aus dem Log ergeben (Cerus: "Empowered …" bei dem Buff beim Auftauchen und "… (Permanent)" für Verkörperungen, die mit Cerus auftauchen und eine eigene Zählung haben; Deimos: Dieb, Trunkenbold, Spieler; Greer: "Godspoil Greer" mit Ereg; Ura: "Ura, the Steamshrieker" oder "Godscream Ura" nach den Lebenspunkten, vor arcdps 2026-09-29 "Elite/Champion/Legendary" für die Adds; Ai: "Elemental Ai, Keeper of the Peak") und zuletzt der Rang aus den Agenten-Informationen ("Veteran ", "Elite ", "Champion ", "Legendary "; arcdps ab 2026-09-29). Nicht portiert: die dunkle Ai, die Instanz Sunqua Peak, die Namen der übrigen Logiken (Splitter, Herzen, Phasen-Ziele, Xera und andere) und die Gemeinschaftsfarben der Trash-Mobs.
 
 Allgemeine Mechaniken:
 
