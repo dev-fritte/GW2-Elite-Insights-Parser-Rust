@@ -7,6 +7,7 @@
 use crate::generated::state_change as sc;
 use crate::keep::Kept;
 use crate::players::Player;
+use ei_data::mechanics::Side;
 use ei_data::skill_ids as skill;
 use std::collections::HashMap;
 
@@ -601,16 +602,14 @@ pub fn encounter_mechanics(
     let mut stable: HashMap<usize, Vec<(i64, i64)>> = HashMap::new();
     let achievements = achievement_events(kept, players, &spans, &active, fight, trigger_id, &defs);
     let enemy_names = enemy_names(kept, table, targets, offset);
+    let species = crate::encounter::species_by_address(table);
     let casts = if defs.iter().any(|m| {
         matches!(
             m.kind,
             Kind::EnemyCastStart | Kind::EnemyCastEnd | Kind::PlayerCastStart
         )
     }) {
-        let mut casters = enemy_names.clone();
-        let squad: std::collections::HashSet<u64> = players.iter().map(|p| p.address).collect();
-        casters.extend(players.iter().map(|p| (p.address, p.character.clone())));
-        enemy_casts(kept, &casters, &squad)
+        all_casts(kept, players, &enemy_names)
     } else {
         Vec::new()
     };
@@ -621,18 +620,26 @@ pub fn encounter_mechanics(
             | Kind::PlayerDstDamage
             | Kind::PlayerDstBuffRemove => MechanicRow {
                 name: m.name,
-                events: player_events(kept, m, offset, duration, &index_of, &mut |i, time| {
-                    stable
-                        .entry(i)
-                        .or_insert_with(|| stability(&players[i]))
-                        .iter()
-                        .any(|&(start, end)| start <= time && time < end)
-                }),
+                events: player_events(
+                    kept,
+                    m,
+                    offset,
+                    duration,
+                    &species,
+                    &index_of,
+                    &mut |i, time| {
+                        stable
+                            .entry(i)
+                            .or_insert_with(|| stability(&players[i]))
+                            .iter()
+                            .any(|&(start, end)| start <= time && time < end)
+                    },
+                ),
                 enemies: Vec::new(),
             },
-            Kind::PlayerSrcHit | Kind::PlayerCastStart => MechanicRow {
+            Kind::PlayerSrcHit | Kind::PlayerCastStart | Kind::PlayerSrcBuffApply => MechanicRow {
                 name: m.name,
-                events: player_source_events(kept, m, fight, &casts, &index_of),
+                events: player_source_events(kept, m, fight, &casts, &species, &index_of),
                 enemies: Vec::new(),
             },
             Kind::Achievement => MechanicRow {
@@ -656,10 +663,33 @@ pub fn encounter_mechanics(
             | Kind::Spawn => MechanicRow {
                 name: m.name,
                 events: Vec::new(),
-                enemies: enemy_events(kept, table, m, fight, &enemy_names, &casts),
+                enemies: enemy_events(kept, table, m, fight, &enemy_names, &casts, &species),
             },
         })
         .collect()
+}
+
+/// The animated casts of the enemies and the players.
+fn all_casts(kept: &Kept, players: &[Player], enemies: &HashMap<u64, String>) -> Vec<EnemyCast> {
+    let mut casters = enemies.clone();
+    let squad: std::collections::HashSet<u64> = players.iter().map(|p| p.address).collect();
+    casters.extend(players.iter().map(|p| (p.address, p.character.clone())));
+    enemy_casts(kept, &casters, &squad)
+}
+
+/// Whether the agent a species check looks at is of one of the species (`IsSpecies`); true for
+/// the mechanics without such a check. `agent` gives the address of the target or the source.
+fn species_ok(
+    filter: ei_data::mechanics::Filter,
+    species: &HashMap<u64, u32>,
+    agent: impl Fn(Side) -> u64,
+) -> bool {
+    let ei_data::mechanics::Filter::Species(side, ids) = filter else {
+        return true;
+    };
+    species
+        .get(&agent(side))
+        .is_some_and(|s| ids.contains(&i64::from(*s)))
 }
 
 /// The events of the mechanics that look at what players do: hits and the start of casts.
@@ -668,9 +698,29 @@ fn player_source_events(
     m: &ei_data::mechanics::Mechanic,
     fight: Fight,
     casts: &[EnemyCast],
+    species: &HashMap<u64, u32>,
     index_of: &dyn Fn(u64) -> Option<usize>,
 ) -> Vec<(i64, usize)> {
-    let mut events: Vec<(i64, usize)> = if m.kind == ei_data::mechanics::Kind::PlayerCastStart {
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    let mut events: Vec<(i64, usize)> = if m.kind == ei_data::mechanics::Kind::PlayerSrcBuffApply {
+        kept.events
+            .iter()
+            .filter(|e| {
+                e.src_agent != 0
+                    && e.dst_agent != 0
+                    && m.ids.contains(&i64::from(e.skill_id))
+                    && matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+                    && species_ok(m.filter, species, |side| {
+                        redirect(if side == Side::To {
+                            e.dst_agent
+                        } else {
+                            e.src_agent
+                        })
+                    })
+            })
+            .filter_map(|e| Some((e.time - fight.offset, index_of(e.src_agent)?)))
+            .collect()
+    } else if m.kind == ei_data::mechanics::Kind::PlayerCastStart {
         casts
             .iter()
             .filter(|c| m.ids.contains(&c.skill) && cast_filter(m.filter, c))
@@ -688,6 +738,13 @@ fn player_source_events(
                     } else {
                         BUFF_HIT_RESULTS.contains(&e.result)
                     }
+                    && species_ok(m.filter, species, |side| {
+                        redirect(if side == Side::To {
+                            e.dst_agent
+                        } else {
+                            e.src_agent
+                        })
+                    })
             })
             .filter_map(|e| Some((e.time - fight.offset, index_of(e.src_agent)?)))
             .collect()
@@ -704,6 +761,7 @@ fn enemy_events(
     fight: Fight,
     names: &HashMap<u64, String>,
     casts: &[EnemyCast],
+    species: &HashMap<u64, u32>,
 ) -> Vec<(i64, String)> {
     use ei_data::mechanics::Kind;
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
@@ -728,6 +786,12 @@ fn enemy_events(
                     };
                 let agent = if removal { e.src_agent } else { e.dst_agent };
                 if !wanted || agent == 0 {
+                    return None;
+                }
+                let other = if removal { e.dst_agent } else { e.src_agent };
+                if !species_ok(m.filter, species, |side| {
+                    redirect(if side == Side::To { agent } else { other })
+                }) {
                     return None;
                 }
                 Some((e.time - fight.offset, names.get(&redirect(agent))?.clone()))
@@ -1167,10 +1231,12 @@ fn player_events(
     m: &ei_data::mechanics::Mechanic,
     offset: i64,
     duration: i64,
+    species: &HashMap<u64, u32>,
     index_of: &dyn Fn(u64) -> Option<usize>,
     has_stability: &mut dyn FnMut(usize, i64) -> bool,
 ) -> Vec<(i64, usize)> {
     use ei_data::mechanics::{Filter, Kind};
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
     // the agent that lost the buffs is the source of a removal, the target of the other records
     let affected = |e: &evtc_ingest::CombatRecord| {
         if e.state_change == sc::BUFF_REMOVE_ALL {
@@ -1208,6 +1274,17 @@ fn player_events(
             Filter::Downed => e.result == DOWNED,
             Filter::DownedOrKilled => e.result == KILLING_BLOW || e.result == DOWNED,
             _ => true,
+        })
+        .filter(|e| {
+            // a removal reports the remover in the target of the record
+            let other = if e.state_change == sc::BUFF_REMOVE_ALL {
+                e.dst_agent
+            } else {
+                e.src_agent
+            };
+            species_ok(m.filter, species, |side| {
+                redirect(if side == Side::To { affected(e) } else { other })
+            })
         })
         .filter_map(|e| Some((e, index_of(affected(e))?)))
         .filter(|(e, i)| {

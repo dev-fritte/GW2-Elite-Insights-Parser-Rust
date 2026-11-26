@@ -25,20 +25,22 @@ $kinds = @{
     'PlayerDstBuffRemoveMechanic' = 'PlayerDstBuffRemove'
     'PlayerSrcHealthDamageHitMechanic' = 'PlayerSrcHit'
     'PlayerCastStartMechanic' = 'PlayerCastStart'
+    'PlayerSrcBuffApplyMechanic' = 'PlayerSrcBuffApply'
 }
 # the filters each kind can evaluate ('dur' stands for the duration comparisons)
 $allowed = @{
-    'PlayerDstHit' = @('', 'nostab', 'damage')
-    'PlayerDstBuffApply' = @('', 'applied')
+    'PlayerDstHit' = @('', 'nostab', 'damage', 'species')
+    'PlayerDstBuffApply' = @('', 'applied', 'species')
+    'PlayerSrcBuffApply' = @('', 'species')
     'Spawn' = @('')
     'EnemyDstBuffRemove' = @('')
     'PlayerDstBuffRemove' = @('')
-    'PlayerSrcHit' = @('')
+    'PlayerSrcHit' = @('', 'species')
     'PlayerCastStart' = @('', 'dur', 'interrupted', 'notinterrupted')
-    'PlayerDstDamage' = @('killed', 'downed', 'downedorkilled')
+    'PlayerDstDamage' = @('killed', 'downed', 'downedorkilled', 'species')
     'EnemyCastStart' = @('', 'dur', 'interrupted', 'notinterrupted')
     'EnemyCastEnd' = @('', 'dur', 'interrupted', 'notinterrupted')
-    'EnemyDstBuffApply' = @('')
+    'EnemyDstBuffApply' = @('', 'species')
     'Achievement' = @('lost', 'kept')
 }
 $filterOf = @{}
@@ -56,6 +58,7 @@ function Get-FilterExpr([string]$code) {
         '^downed$' { return 'Filter::Downed' }
         '^downedorkilled$' { return 'Filter::DownedOrKilled' }
         '^applied=(\d+)$' { return "Filter::AppliedDuration($($Matches[1]))" }
+        '^species:(to|by)=([\d,]+)$' { return "Filter::Species(Side::$(if ($Matches[1] -eq 'to') { 'To' } else { 'By' }), &[$($Matches[2])])" }
         '^interrupted$' { return 'Filter::Interrupted' }
         '^notinterrupted$' { return 'Filter::NotInterrupted' }
         '^dur>=(\d+)$' { return "Filter::DurationAtLeast($($Matches[1]))" }
@@ -98,6 +101,17 @@ L '    /// A hit of a player with one of the skills (`PlayerSrcHealthDamageHitMe
 L '    PlayerSrcHit,'
 L '    /// The start of an animated cast of one of the skills by a player (`PlayerCastStartMechanic`).'
 L '    PlayerCastStart,'
+L '    /// One of the buffs a player applied (`PlayerSrcBuffApplyMechanic`).'
+L '    PlayerSrcBuffApply,'
+L '}'
+L ''
+L '/// The agent of the event whose species is checked.'
+L '#[derive(Debug, Clone, Copy, PartialEq, Eq)]'
+L 'pub enum Side {'
+L '    /// The target (`To`).'
+L '    To,'
+L '    /// The source (`By`, `From`, `CreditedBy`).'
+L '    By,'
 L '}'
 L ''
 L '/// The check a mechanic adds to its kind (the lambda of `UsingChecker`).'
@@ -133,6 +147,8 @@ L '    /// The cast was interrupted.'
 L '    Interrupted,'
 L '    /// The cast was not interrupted.'
 L '    NotInterrupted,'
+L '    /// An agent of one of the species (the mechanic ids stay the skill or buff ids) is the target or the source.'
+L '    Species(Side, &''static [i64]),'
 L '}'
 L ''
 L '/// One mechanic of an encounter logic.'
@@ -167,7 +183,7 @@ foreach ($r in ($rows | Sort-Object { [int]$_.Trigger })) {
         $code = $filterOf["$($r.Logic)|$($r.Type)|$($r.Short)"]
         if (-not $code) { continue }
     }
-    $base = if ($code -match '^dur') { 'dur' } elseif ($code -match '^applied=') { 'applied' } else { $code }
+    $base = if ($code -match '^dur') { 'dur' } elseif ($code -match '^applied=') { 'applied' } elseif ($code -match '^species:') { 'species' } else { $code }
     if ($allowed[$kind] -notcontains $base) { continue }
     # negative ids are gadget interactions and emotes, no animated casts
     if ($kind -eq 'PlayerCastStart' -and $r.Ids -match '-') { continue }

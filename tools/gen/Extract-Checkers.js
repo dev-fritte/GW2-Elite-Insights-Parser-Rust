@@ -37,11 +37,36 @@ function balanced(s, i) {
   return -1;
 }
 
+// numeric values of the TargetID enum; names defined by other constants are left out
+const targetIds = new Map();
+{
+  const src = fs.readFileSync(path.join(root, '..', 'ParserHelpers/IDs/SpeciesIDs.cs'), 'utf8').replace(/\r/g, '');
+  const start = src.indexOf('enum TargetID');
+  const end = src.indexOf('\n    }', start);
+  for (const m of src.slice(start, end).matchAll(/^\s*(\w+)\s*=\s*(\d+)\s*,/gm)) targetIds.set(m[1], m[2]);
+}
+
+// ids of the species a checker lists, or null if one is not a plain number
+function speciesIds(list) {
+  const ids = [];
+  for (const m of list.matchAll(/TargetID\.(\w+)/g)) {
+    if (!targetIds.has(m[1])) return null;
+    ids.push(targetIds.get(m[1]));
+  }
+  const rest = list.replace(/TargetID\.\w+/g, '').replace(/new List<TargetID>|\(int\)|[\[\]{}(),\s]/g, '');
+  return ids.length && !rest ? ids : null;
+}
+
 function classify(chain) {
   const checkers = chain.filter(x => x[0] === 'UsingChecker' || x[0] === 'UsingBuffChecker');
   if (checkers.length !== 1) return null;
   const [name, a] = checkers[0];
   let m;
+  // the species of an agent of the event: the target ('to') or the source ('by')
+  if ((m = /^\(\w+,\s*log\)\s*=>\s*\w+\.(To|By|From|CreditedBy|CreditedFrom|Src)\.Is(?:Any)?Species\((.*)\)$/.exec(a))) {
+    const ids = speciesIds(m[2]);
+    if (ids) return 'species:' + (m[1] === 'To' ? 'to' : 'by') + '=' + ids.join(',');
+  }
   if (name === 'UsingBuffChecker' && a === 'Stability, false') return 'nostab';
   if ((m = /^\(\w+,\s*log\)\s*=>\s*\w+\.ActualDuration\s*(>=|<=|>|<)\s*(\d+)$/.exec(a))) {
     return { '>=': 'dur>=', '<=': 'dur<=', '>': 'dur>', '<': 'dur<' }[m[1]] + m[2];

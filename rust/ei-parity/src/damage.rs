@@ -578,6 +578,35 @@ fn note_enemy_names(
     }
 }
 
+/// Counts the mechanics the reference lists with events that are not produced at all.
+fn note_unproduced(
+    analysis: &ei_core::pipeline::DamageAnalysis,
+    reference: &[Value],
+    generic: &[&str],
+    label: &str,
+    stats: &mut BTreeMap<&'static str, DamageStats>,
+) {
+    let produced: std::collections::BTreeSet<&str> =
+        analysis.mechanics.iter().map(|m| m.name).collect();
+    for m in reference {
+        let Some(name) = m.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let events = m
+            .get("mechanicsData")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+        if events > 0 && !generic.contains(&name) && !produced.contains(name) {
+            let s = stats.entry("mechanics (not produced)").or_default();
+            s.compared += 1;
+            s.mismatches += 1;
+            if s.examples.len() < 400 {
+                s.examples.push(format!("{label} {name}: {events} events"));
+            }
+        }
+    }
+}
+
 fn compare_mechanics(
     analysis: &ei_core::pipeline::DamageAnalysis,
     reference: &Value,
@@ -611,6 +640,7 @@ fn compare_mechanics(
         .map(|m| m.name)
         .filter(|n| !NAMES.contains(n))
         .collect();
+    note_unproduced(analysis, &theirs_all, &NAMES, label, stats);
     for (name, key) in NAMES.into_iter().map(|n| (n, "mechanics (generic)")).chain(
         encounter_names
             .into_iter()

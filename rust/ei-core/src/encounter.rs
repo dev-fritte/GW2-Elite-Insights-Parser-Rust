@@ -1958,6 +1958,19 @@ pub(crate) fn species_first_seen(kept: &Kept, table: AgentTable<'_>, id: i64) ->
         .unwrap_or_default()
 }
 
+/// The species of every non player character and gadget by address.
+#[must_use]
+pub(crate) fn species_by_address(table: AgentTable<'_>) -> HashMap<u64, u32> {
+    table
+        .iter()
+        .filter_map(|a| match agent_kind(a) {
+            AgentKind::Npc => Some((a.address(), a.profession())),
+            AgentKind::Gadget => Some((a.address(), a.profession() & 0xFFFF)),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The addresses of the agents of the trash mob species of the logic (`LogLogic.TrashMobs`).
 #[must_use]
 pub(crate) fn trash_addresses(kept: &Kept, table: AgentTable<'_>) -> Vec<u64> {

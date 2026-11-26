@@ -9,6 +9,10 @@ AiKeeperOfThePeak	EnemyCastEndMechanic	IntSor.Mnp.	interrupted
 AiKeeperOfThePeak	PlayerDstHealthDamageMechanic	Mtr.H	downedorkilled
 Arkk	EnemyCastEndMechanic	Pull CC Fail	dur>3200
 Arkk	EnemyCastEndMechanic	Pull CCed	dur<3200
+BanditTrio	PlayerDstBuffApplyMechanic	Blinded	species:by=16137
+BanditTrio	PlayerDstBuffApplyMechanic	Burning	species:by=16125
+BanditTrio	PlayerSrcBuffApplyMechanic	Targeted.B	species:to=16088
+BanditTrio	PlayerSrcHealthDamageHitMechanic	Beehive.H.B	species:to=16088
 Boneskinner	EnemyCastEndMechanic	D.Darkness	notinterrupted
 Boneskinner	EnemyCastEndMechanic	D.Torch	notinterrupted
 Boneskinner	EnemyCastEndMechanic	D.Wind	notinterrupted
@@ -17,6 +21,10 @@ ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Tremor	damage
 ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Wall	damage
 CosmicObservatory	AchievementEligibilityMechanic	DancStars.Achiv.K	kept
 CosmicObservatory	AchievementEligibilityMechanic	DancStars.Achiv.L	lost
+CosmicObservatory	EnemyDstBuffApplyMechanic	Planet Crash (Int)	species:to=25705
+CosmicObservatory	PlayerDstBuffApplyMechanic	Sl.Fst.T	species:by=25705
+CosmicObservatory	PlayerSrcHealthDamageHitMechanic	PurLight.Dagda.C	species:to=25705
+CosmicObservatory	PlayerSrcHealthDamageHitMechanic	PurLight.Soul.C	species:to=26069
 DecimaTheStormsinger	AchievementEligibilityMechanic	BugDance.Achiv.K	kept
 DecimaTheStormsinger	AchievementEligibilityMechanic	BugDance.Achiv.L	lost
 Deimos	EnemyCastEndMechanic	TP CC Fail	dur>=2200
@@ -27,6 +35,7 @@ Deimos	PlayerDstHealthDamageHitMechanic	Mind Crush	damage
 Dhuum	PlayerCastEndMechanic	Eth.Seal.F	interrupted
 Dhuum	PlayerCastEndMechanic	Eth.Seal.I	notinterrupted
 Dhuum	PlayerCastStartMechanic	Eth.Seal.S	notinterrupted
+Dhuum	PlayerDstBuffApplyMechanic	SupSpeed.Orb	species:by=19481
 Dhuum	PlayerDstHealthDamageHitMechanic	Shackles dmg	damage
 Ensolyss	EnemyCastEndMechanic	CC.E Fail	dur>=15260
 Ensolyss	EnemyCastEndMechanic	CCed	dur<15260
@@ -42,10 +51,20 @@ Gorseval	PlayerDstHealthDamageHitMechanic	Kick.S	nostab
 Gorseval	PlayerDstHealthDamageHitMechanic	Slam	nostab
 GreerTheBlightbringer	AchievementEligibilityMechanic	Unplagued.Achiv.K	kept
 GreerTheBlightbringer	AchievementEligibilityMechanic	Unplagued.Achiv.L	lost
+GreerTheBlightbringer	EnemySrcEnemyDstBuffApplyMechanic	Empowered.E	species:to=26859
+GreerTheBlightbringer	EnemySrcEnemyDstBuffApplyMechanic	Empowered.Ge	species:to=26771
+GreerTheBlightbringer	EnemySrcEnemyDstBuffApplyMechanic	Empowered.Gr	species:to=26725
+GreerTheBlightbringer	EnemySrcEnemyDstBuffApplyMechanic	Empowered.R	species:to=26742
+GreerTheBlightbringer	PlayerDstBuffRemoveMechanic	BoonCorrupt	species:by=26725,26771,26742,26859
 GreerTheBlightbringer	PlayerDstHealthDamageHitMechanic	Rake.H	nostab
 GreerTheBlightbringer	PlayerDstHealthDamageHitMechanic	Sweep.H	nostab
+GreerTheBlightbringer	PlayerSrcHealthDamageHitMechanic	ProjRefl.Gree.H	species:to=26771
+GreerTheBlightbringer	PlayerSrcHealthDamageHitMechanic	ProjRefl.Greer.H	species:to=26725
+GreerTheBlightbringer	PlayerSrcHealthDamageHitMechanic	ProjRefl.Reeg.H	species:to=26742
 GuardiansGlade	AchievementEligibilityMechanic	Achiv.Sand.K	kept
 GuardiansGlade	AchievementEligibilityMechanic	Achiv.Sand.L	lost
+GuardiansGlade	EnemySrcHealthDamageMechanic	Ate Artifact	species:to=27663
+GuardiansGlade	EnemySrcHealthDamageMechanic	Ate Croc	species:to=27658
 HarvestTemple	AchievementEligibilityMechanic	NopeRopes.Achiv.K	kept
 HarvestTemple	AchievementEligibilityMechanic	NopeRopes.Achiv.L	lost
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Kick.H	nostab
@@ -55,13 +74,26 @@ KainengOverlook	AchievementEligibilityMechanic	MostResi.Achiv.G	kept
 KainengOverlook	AchievementEligibilityMechanic	MostResi.Achiv.N.G	lost
 KainengOverlook	AchievementEligibilityMechanic	TextReflx.Achiv.K	kept
 KainengOverlook	AchievementEligibilityMechanic	TextReflx.Achiv.L	lost
+KainengOverlook	PlayerDstBuffApplyMechanic	Fixated.E	species:by=24261,25236
+KainengOverlook	PlayerDstBuffApplyMechanic	Fixated.M	species:by=24254,25280
 KainengOverlook	PlayerDstHealthDamageMechanic	Bomb.D	downed
 MursaatOverseer	PlayerDstBuffApplyMechanic	Protect	applied=1000
 NexusOfEternity	AchievementEligibilityMechanic	TrueVisionary.Achiv.K	kept
 NexusOfEternity	AchievementEligibilityMechanic	TrueVisionary.Achiv.L	lost
+NexusOfEternity	EnemyDstBuffApplyMechanic	Emp.Vl	species:by=28106
+NexusOfEternity	EnemySrcEnemyDstBuffApplyMechanic	Emp.Sp	species:by=28033
+NexusOfEternity	EnemySrcEnemyDstBuffApplyMechanic	Emp.St	species:by=28017
+NexusOfEternity	EnemySrcEnemyDstBuffApplyMechanic	Emp.Sw	species:by=28107
+NexusOfEternity	EnemySrcMissileMechanic	Asp.OrbGen	species:by=28106,28017,28033,28107
 NexusOfEternity	PlayerDstHealthDamageMechanic	WorldpierV.K	killed
 OldLionsCourt	AchievementEligibilityMechanic	AethAver.Achiv.K	kept
 OldLionsCourt	AchievementEligibilityMechanic	AethAver.Achiv.L	lost
+OldLionsCourt	PlayerDstBuffApplyMechanic	Fix.Arse.A	species:by=25415,25416
+OldLionsCourt	PlayerDstBuffApplyMechanic	Fix.Indi.A	species:by=25419,25423
+OldLionsCourt	PlayerDstBuffApplyMechanic	Fix.Verm.A	species:by=25413,25414
+OldLionsCourt	PlayerDstHealthDamageMechanic	ArseFall.H	species:by=25415,25416
+OldLionsCourt	PlayerDstHealthDamageMechanic	IndiFall.H	species:by=25419,25423
+OldLionsCourt	PlayerDstHealthDamageMechanic	VermFall.H	species:by=25413,25414
 Qadim	AchievementEligibilityMechanic	Taking Turns.G	kept
 Qadim	AchievementEligibilityMechanic	Taking Turns.N.G	lost
 Qadim	EnemyCastEndMechanic	D.CC Fail	dur>=8332
@@ -74,6 +106,8 @@ Qadim	PlayerDstHealthDamageHitMechanic	D.Wave	nostab
 Qadim	PlayerDstHealthDamageHitMechanic	KB	nostab
 Qadim	PlayerDstHealthDamageHitMechanic	Slash	nostab
 QadimThePeerless	PlayerDstHealthDamageHitMechanic	Shck.KB	nostab
+River	EnemySrcHealthDamageHitMechanic	Bomb Hit Desmina	species:to=19828
+River	EnemySrcHealthDamageHitMechanic	Tether Desmina	species:to=19828
 River	PlayerDstHealthDamageHitMechanic	Stun Bomb	nostab
 Sabetha	EnemyCastEndMechanic	CC.K Fail	dur>4400
 Sabetha	EnemyCastEndMechanic	CCed.K	dur<=4400
@@ -100,9 +134,12 @@ SoullessHorror	AchievementEligibilityMechanic	NecDancer.Achiv.K	kept
 SoullessHorror	AchievementEligibilityMechanic	NecDancer.Achiv.L	lost
 SoullessHorror	EnemyCastEndMechanic	CC.SH Fail	dur>6800
 SoullessHorror	EnemyCastEndMechanic	CCed.SH	dur<=6800
+SoullessHorror	PlayerSrcBuffApplyMechanic	Immob.Golem	species:to=19422
 SpiritRace	AchievementEligibilityMechanic	Outrun.Achiv.K	kept
 SpiritRace	AchievementEligibilityMechanic	Outrun.Achiv.L	lost
 StatueOfDarkness	PlayerCastStartMechanic	Detonate	notinterrupted
+StatueOfDarkness	PlayerSrcBuffApplyMechanic	Hard CC Fate	species:to=19844
+StatueOfDarkness	PlayerSrcBuffApplyMechanic	Hard CC Judge	species:to=19651
 StatueOfDeath	PlayerCastStartMechanic	Light Orb Thrown	notinterrupted
 TempleOfFebe	AchievementEligibilityMechanic	UnbOpt.Achiv.K	kept
 TempleOfFebe	AchievementEligibilityMechanic	UnbOpt.Achiv.L	lost
