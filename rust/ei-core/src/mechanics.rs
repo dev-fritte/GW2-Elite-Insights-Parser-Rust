@@ -538,6 +538,8 @@ const KILLING_BLOW: u8 = 8;
 const DOWNED: u8 = 9;
 /// `ParserHelper.ServerDelayConstant`.
 const SERVER_DELAY: i64 = 10;
+/// Buff id of stability.
+const STABILITY: i64 = 1122;
 
 const DIRECT_HIT_RESULTS: std::ops::RangeInclusive<u8> = 0..=2;
 /// `DamageResult` values of buff damage that counts as hit: all kinds of buff cycles.
@@ -567,7 +569,7 @@ pub fn encounter_mechanics(
     table: evtc_ingest::AgentTable<'_>,
     targets: &[crate::encounter::Target],
     fight: Fight,
-    stability: &dyn Fn(&Player) -> Vec<(i64, i64)>,
+    buffs: &dyn Fn(u64, i64) -> Vec<(i64, i64)>,
 ) -> Vec<MechanicRow> {
     use ei_data::mechanics::{Kind, MECHANICS};
     let Fight {
@@ -599,10 +601,19 @@ pub fn encounter_mechanics(
             .position(|p| p.address == redirect(address))
             .filter(|&i| active[i])
     };
-    let mut stable: HashMap<usize, Vec<(i64, i64)>> = HashMap::new();
+    // the times an agent has a buff, asked for from the simulation once
+    let cache = std::cell::RefCell::new(BuffTimes::new());
+    let has_buff = |address: u64, buff: i64, time: i64| {
+        cache
+            .borrow_mut()
+            .entry((address, buff))
+            .or_insert_with(|| buffs(address, buff))
+            .iter()
+            .any(|&(start, end)| start <= time && time < end)
+    };
     let achievements = achievement_events(kept, players, &spans, &active, fight, trigger_id, &defs);
     let enemy_names = enemy_names(kept, table, targets, offset);
-    let species = crate::encounter::species_by_address(table);
+    let species = species_of_agents(table, &enemy_names);
     let casts = if defs.iter().any(|m| {
         matches!(
             m.kind,
@@ -612,6 +623,12 @@ pub fn encounter_mechanics(
         all_casts(kept, players, &enemy_names)
     } else {
         Vec::new()
+    };
+    let lookup = Lookup {
+        names: &enemy_names,
+        casts: &casts,
+        species: &species,
+        has_buff: &has_buff,
     };
     defs.iter()
         .map(|m| match m.kind {
@@ -627,13 +644,7 @@ pub fn encounter_mechanics(
                     duration,
                     &species,
                     &index_of,
-                    &mut |i, time| {
-                        stable
-                            .entry(i)
-                            .or_insert_with(|| stability(&players[i]))
-                            .iter()
-                            .any(|&(start, end)| start <= time && time < end)
-                    },
+                    &mut |i, time| has_buff(players[i].address, STABILITY, time),
                 ),
                 enemies: Vec::new(),
             },
@@ -644,16 +655,7 @@ pub fn encounter_mechanics(
             },
             Kind::Achievement => MechanicRow {
                 name: m.name,
-                events: achievements
-                    .get(&(m.trigger_id, m.ids[0]))
-                    .map(|all| {
-                        let lost = m.filter == ei_data::mechanics::Filter::Lost;
-                        all.iter()
-                            .filter(|e| e.2 == lost)
-                            .map(|e| (e.0, e.1))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
+                events: achievement_row(m, &achievements),
                 enemies: Vec::new(),
             },
             Kind::EnemyDstBuffApply
@@ -663,10 +665,57 @@ pub fn encounter_mechanics(
             | Kind::Spawn => MechanicRow {
                 name: m.name,
                 events: Vec::new(),
-                enemies: enemy_events(kept, table, m, fight, &enemy_names, &casts, &species),
+                enemies: enemy_events(kept, table, m, fight, &lookup),
             },
         })
         .collect()
+}
+
+/// The events of an achievement mechanic: the players that lost it or kept it.
+fn achievement_row(
+    m: &ei_data::mechanics::Mechanic,
+    achievements: &Achievements,
+) -> Vec<(i64, usize)> {
+    let lost = m.filter == ei_data::mechanics::Filter::Lost;
+    achievements
+        .get(&(m.trigger_id, m.ids[0]))
+        .map(|all| {
+            all.iter()
+                .filter(|e| e.2 == lost)
+                .map(|e| (e.0, e.1))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The times (start, end) an agent has a buff, by agent address and buff id.
+type BuffTimes = HashMap<(u64, i64), Vec<(i64, i64)>>;
+
+/// What the mechanics on enemies look up.
+struct Lookup<'a> {
+    /// Name of each enemy agent.
+    names: &'a HashMap<u64, String>,
+    /// The animated casts.
+    casts: &'a [EnemyCast],
+    /// Species of each agent.
+    species: &'a HashMap<u64, u32>,
+    /// Whether an agent has a buff at a time (agent, buff id, time).
+    has_buff: &'a dyn Fn(u64, i64, i64) -> bool,
+}
+
+/// The species of every agent; the embodiments that appear with Cerus are of their own species
+/// in C# (here 0).
+fn species_of_agents(
+    table: evtc_ingest::AgentTable<'_>,
+    enemy_names: &HashMap<u64, String>,
+) -> HashMap<u64, u32> {
+    let mut species = crate::encounter::species_by_address(table);
+    for (address, name) in enemy_names {
+        if name.ends_with("(Permanent)") {
+            species.insert(*address, 0);
+        }
+    }
+    species
 }
 
 /// The animated casts of the enemies and the players.
@@ -759,11 +808,15 @@ fn enemy_events(
     table: evtc_ingest::AgentTable<'_>,
     m: &ei_data::mechanics::Mechanic,
     fight: Fight,
-    names: &HashMap<u64, String>,
-    casts: &[EnemyCast],
-    species: &HashMap<u64, u32>,
+    lookup: &Lookup<'_>,
 ) -> Vec<(i64, String)> {
     use ei_data::mechanics::Kind;
+    let Lookup {
+        names,
+        casts,
+        species,
+        has_buff,
+    } = *lookup;
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
     let mut events: Vec<(i64, String)> = if m.kind == Kind::Spawn {
         m.ids
@@ -793,6 +846,22 @@ fn enemy_events(
                     redirect(if side == Side::To { agent } else { other })
                 }) {
                     return None;
+                }
+                if let ei_data::mechanics::Filter::SpeciesBuff {
+                    species: wanted,
+                    buff,
+                    present,
+                    delay,
+                } = m.filter
+                {
+                    let target = redirect(agent);
+                    let is_species = species
+                        .get(&target)
+                        .is_some_and(|s| i64::from(*s) == wanted);
+                    let time = e.time - fight.offset - delay;
+                    if !is_species || has_buff(target, buff, time) != present {
+                        return None;
+                    }
                 }
                 Some((e.time - fight.offset, names.get(&redirect(agent))?.clone()))
             })

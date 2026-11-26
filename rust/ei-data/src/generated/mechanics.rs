@@ -76,6 +76,17 @@ pub enum Filter {
     NotInterrupted,
     /// An agent of one of the species (the mechanic ids stay the skill or buff ids) is the target or the source.
     Species(Side, &'static [i64]),
+    /// The target is of the species and has (`present`) or has not a buff `delay` ms before the event (`HasBuff`).
+    SpeciesBuff {
+        /// Species id.
+        species: i64,
+        /// Buff id.
+        buff: i64,
+        /// Whether the buff has to be there.
+        present: bool,
+        /// How long before the event the buff is looked for, in ms.
+        delay: i64,
+    },
 }
 
 /// One mechanic of an encounter logic.
@@ -1156,7 +1167,19 @@ pub const MECHANICS: &[Mechanic] = &[
     Mechanic { trigger_id: 25989, kind: Kind::EnemyCastStart, filter: Filter::None, ids: &[71124,70681], name: "EnrSmash.C", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
     Mechanic { trigger_id: 25989, kind: Kind::Achievement, filter: Filter::Lost, ids: &[9], name: "UnbOpt.Achiv.L", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
     Mechanic { trigger_id: 25989, kind: Kind::EnemyCastStart, filter: Filter::None, ids: &[70575], name: "Pet.C", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
+    Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::SpeciesBuff { species: 25677, buff: 70687, present: true, delay: 0 }, ids: &[757], name: "Emp.Gluttony.K", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
+    Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::SpeciesBuff { species: 25967, buff: 69479, present: true, delay: 0 }, ids: &[757], name: "Emp.Envy.K", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
+    Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::SpeciesBuff { species: 26034, buff: 71276, present: true, delay: 0 }, ids: &[757], name: "Emp.Despair.K", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
+    Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::SpeciesBuff { species: 26049, buff: 70544, present: true, delay: 0 }, ids: &[757], name: "Emp.Regret.K", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
+    Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::SpeciesBuff { species: 25686, buff: 70181, present: true, delay: 0 }, ids: &[757], name: "Emp.Rage.K", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
+    Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::SpeciesBuff { species: 25700, buff: 70621, present: true, delay: 0 }, ids: &[757], name: "Emp.Malice.K", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
+    Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::SpeciesBuff { species: 26049, buff: 70544, present: false, delay: 0 }, ids: &[757], name: "Regret.K", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
+    Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::SpeciesBuff { species: 25967, buff: 69479, present: false, delay: 0 }, ids: &[757], name: "Envy.K", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
+    Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::SpeciesBuff { species: 26034, buff: 71276, present: false, delay: 0 }, ids: &[757], name: "Despair.K", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
     Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::None, ids: &[70123], name: "EmpReg.A", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
+    Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::SpeciesBuff { species: 25686, buff: 70181, present: false, delay: 0 }, ids: &[757], name: "Rage.K", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
+    Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::SpeciesBuff { species: 25700, buff: 70621, present: false, delay: 0 }, ids: &[757], name: "Malice.K", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
+    Mechanic { trigger_id: 25989, kind: Kind::EnemyDstBuffApply, filter: Filter::SpeciesBuff { species: 25677, buff: 70687, present: false, delay: 0 }, ids: &[757], name: "Gluttony.K", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
     Mechanic { trigger_id: 25989, kind: Kind::PlayerDstHit, filter: Filter::None, ids: &[71124,70681], name: "EnrSmash.H", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
     Mechanic { trigger_id: 25989, kind: Kind::EnemyCastStart, filter: Filter::None, ids: &[71142,70084,69500,71097], name: "CrushReg.C", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },
     Mechanic { trigger_id: 25989, kind: Kind::PlayerDstHit, filter: Filter::None, ids: &[69548,70292], name: "Emp.WailDesp.H", builds: (0, 18446744073709551615), evtc_builds: (-2147483648, 2147483647) },

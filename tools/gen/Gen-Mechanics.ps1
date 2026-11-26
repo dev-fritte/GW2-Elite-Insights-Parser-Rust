@@ -40,7 +40,7 @@ $allowed = @{
     'PlayerDstDamage' = @('killed', 'downed', 'downedorkilled', 'species')
     'EnemyCastStart' = @('', 'dur', 'interrupted', 'notinterrupted')
     'EnemyCastEnd' = @('', 'dur', 'interrupted', 'notinterrupted')
-    'EnemyDstBuffApply' = @('', 'species')
+    'EnemyDstBuffApply' = @('', 'species', 'speciesbuff')
     'Achievement' = @('lost', 'kept')
 }
 $filterOf = @{}
@@ -59,6 +59,7 @@ function Get-FilterExpr([string]$code) {
         '^downedorkilled$' { return 'Filter::DownedOrKilled' }
         '^applied=(\d+)$' { return "Filter::AppliedDuration($($Matches[1]))" }
         '^species:(to|by)=([\d,]+)$' { return "Filter::Species(Side::$(if ($Matches[1] -eq 'to') { 'To' } else { 'By' }), &[$($Matches[2])])" }
+        '^speciesbuff:(\d+),(\d+),(has|no),(\d+)$' { return "Filter::SpeciesBuff { species: $($Matches[1]), buff: $($Matches[2]), present: $(if ($Matches[3] -eq 'has') { 'true' } else { 'false' }), delay: $($Matches[4]) }" }
         '^interrupted$' { return 'Filter::Interrupted' }
         '^notinterrupted$' { return 'Filter::NotInterrupted' }
         '^dur>=(\d+)$' { return "Filter::DurationAtLeast($($Matches[1]))" }
@@ -149,6 +150,17 @@ L '    /// The cast was not interrupted.'
 L '    NotInterrupted,'
 L '    /// An agent of one of the species (the mechanic ids stay the skill or buff ids) is the target or the source.'
 L '    Species(Side, &''static [i64]),'
+L '    /// The target is of the species and has (`present`) or has not a buff `delay` ms before the event (`HasBuff`).'
+L '    SpeciesBuff {'
+L '        /// Species id.'
+L '        species: i64,'
+L '        /// Buff id.'
+L '        buff: i64,'
+L '        /// Whether the buff has to be there.'
+L '        present: bool,'
+L '        /// How long before the event the buff is looked for, in ms.'
+L '        delay: i64,'
+L '    },'
 L '}'
 L ''
 L '/// One mechanic of an encounter logic.'
@@ -183,7 +195,7 @@ foreach ($r in ($rows | Sort-Object { [int]$_.Trigger })) {
         $code = $filterOf["$($r.Logic)|$($r.Type)|$($r.Short)"]
         if (-not $code) { continue }
     }
-    $base = if ($code -match '^dur') { 'dur' } elseif ($code -match '^applied=') { 'applied' } elseif ($code -match '^species:') { 'species' } else { $code }
+    $base = if ($code -match '^dur') { 'dur' } elseif ($code -match '^applied=') { 'applied' } elseif ($code -match '^species:') { 'species' } elseif ($code -match '^speciesbuff:') { 'speciesbuff' } else { $code }
     if ($allowed[$kind] -notcontains $base) { continue }
     # negative ids are gadget interactions and emotes, no animated casts
     if ($kind -eq 'PlayerCastStart' -and $r.Ids -match '-') { continue }

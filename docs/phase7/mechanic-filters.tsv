@@ -129,6 +129,7 @@ ShatteredObservatory	PlayerDstBuffApplyMechanic	Eye	applied=3000
 Siax	EnemyCastEndMechanic	CC.S Fail	dur>=15232
 Siax	EnemyCastEndMechanic	Phase Fail	dur>=20649
 Slothasor	PlayerDstBuffApplyMechanic	Fear	applied=8000
+SooWon	EnemyDstBuffApplyMechanic	CCed	speciesbuff:35552,67763,no,10
 SooWon	PlayerDstHealthDamageMechanic	Failed Green	killed
 SoullessHorror	AchievementEligibilityMechanic	NecDancer.Achiv.K	kept
 SoullessHorror	AchievementEligibilityMechanic	NecDancer.Achiv.L	lost
@@ -143,6 +144,18 @@ StatueOfDarkness	PlayerSrcBuffApplyMechanic	Hard CC Judge	species:to=19651
 StatueOfDeath	PlayerCastStartMechanic	Light Orb Thrown	notinterrupted
 TempleOfFebe	AchievementEligibilityMechanic	UnbOpt.Achiv.K	kept
 TempleOfFebe	AchievementEligibilityMechanic	UnbOpt.Achiv.L	lost
+TempleOfFebe	EnemyDstBuffApplyMechanic	Despair.K	speciesbuff:26034,71276,no,0
+TempleOfFebe	EnemyDstBuffApplyMechanic	Emp.Despair.K	speciesbuff:26034,71276,has,0
+TempleOfFebe	EnemyDstBuffApplyMechanic	Emp.Envy.K	speciesbuff:25967,69479,has,0
+TempleOfFebe	EnemyDstBuffApplyMechanic	Emp.Gluttony.K	speciesbuff:25677,70687,has,0
+TempleOfFebe	EnemyDstBuffApplyMechanic	Emp.Malice.K	speciesbuff:25700,70621,has,0
+TempleOfFebe	EnemyDstBuffApplyMechanic	Emp.Rage.K	speciesbuff:25686,70181,has,0
+TempleOfFebe	EnemyDstBuffApplyMechanic	Emp.Regret.K	speciesbuff:26049,70544,has,0
+TempleOfFebe	EnemyDstBuffApplyMechanic	Envy.K	speciesbuff:25967,69479,no,0
+TempleOfFebe	EnemyDstBuffApplyMechanic	Gluttony.K	speciesbuff:25677,70687,no,0
+TempleOfFebe	EnemyDstBuffApplyMechanic	Malice.K	speciesbuff:25700,70621,no,0
+TempleOfFebe	EnemyDstBuffApplyMechanic	Rage.K	speciesbuff:25686,70181,no,0
+TempleOfFebe	EnemyDstBuffApplyMechanic	Regret.K	speciesbuff:26049,70544,no,0
 TempleOfFebe	PlayerDstHealthDamageHitMechanic	EnrSmash.D	downed
 TwinLargos	PlayerDstHealthDamageHitMechanic	Wave	nostab
 UraTheSteamshrieker	AchievementEligibilityMechanic	Achiv.Hop.K	kept

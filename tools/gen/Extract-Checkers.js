@@ -46,6 +46,13 @@ const targetIds = new Map();
   for (const m of src.slice(start, end).matchAll(/^\s*(\w+)\s*=\s*(\d+)\s*,/gm)) targetIds.set(m[1], m[2]);
 }
 
+// numeric values of the skill and buff constants
+const skillIds = new Map();
+{
+  const src = fs.readFileSync(path.join(root, '..', 'ParserHelpers/IDs/SkillIDs.cs'), 'utf8').replace(/\r/g, '');
+  for (const m of src.matchAll(/const long (\w+)\s*=\s*(\d+);/g)) skillIds.set(m[1], m[2]);
+}
+
 // ids of the species a checker lists, or null if one is not a plain number
 function speciesIds(list) {
   const ids = [];
@@ -62,6 +69,13 @@ function classify(chain) {
   if (checkers.length !== 1) return null;
   const [name, a] = checkers[0];
   let m;
+  // the target is of the species and has (or has not) a buff when the event happens
+  if ((m = /^\(\w+,\s*log\)\s*=>\s*\w+\.To\.IsSpecies\(TargetID\.(\w+)\)\s*(?:&&|&)\s*(!?)\s*\w+\.To\.HasBuff\(log,\s*(\w+),\s*\w+\.Time(?:\s*-\s*(?:ParserHelper\.)?ServerDelayConstant)?\)$/.exec(a))) {
+    if (targetIds.has(m[1]) && skillIds.has(m[3])) {
+      const delay = /ServerDelayConstant/.test(a) ? 10 : 0;
+      return 'speciesbuff:' + targetIds.get(m[1]) + ',' + skillIds.get(m[3]) + ',' + (m[2] ? 'no' : 'has') + ',' + delay;
+    }
+  }
   // the species of an agent of the event: the target ('to') or the source ('by')
   if ((m = /^\(\w+,\s*log\)\s*=>\s*\w+\.(To|By|From|CreditedBy|CreditedFrom|Src)\.Is(?:Any)?Species\((.*)\)$/.exec(a))) {
     const ids = speciesIds(m[2]);
