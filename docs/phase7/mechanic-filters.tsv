@@ -3,6 +3,9 @@ Adina	PlayerDstHealthDamageHitMechanic	Perilous Pulse	nostab
 Adina	PlayerDstHealthDamageMechanic	S.Thrower	killed
 AetherbladeHideout	PlayerDstHealthDamageMechanic	Green.Dwn	downed
 AetherbladeHideout	PlayerDstHealthDamageMechanic	Spread.Dwn	downed
+AiKeeperOfThePeak	EnemyCastEndMechanic	Int.Glt.Mnp.	interrupted
+AiKeeperOfThePeak	EnemyCastEndMechanic	IntFear.Mnp.	interrupted
+AiKeeperOfThePeak	EnemyCastEndMechanic	IntSor.Mnp.	interrupted
 AiKeeperOfThePeak	PlayerDstHealthDamageMechanic	Mtr.H	downedorkilled
 Arkk	EnemyCastEndMechanic	Pull CC Fail	dur>3200
 Arkk	EnemyCastEndMechanic	Pull CCed	dur<3200
@@ -34,6 +37,7 @@ FraenirOfJormag	PlayerDstHealthDamageHitMechanic	Icequake	nostab
 FraenirOfJormag	PlayerDstHealthDamageHitMechanic	SeismicCrush.CC	nostab
 Gorseval	EnemyCastEndMechanic	CC.G End	dur>21985
 Gorseval	EnemyCastEndMechanic	CCed.G	dur<=21985
+Gorseval	PlayerDstBuffApplyMechanic	Black	applied=10000
 Gorseval	PlayerDstHealthDamageHitMechanic	Kick.S	nostab
 Gorseval	PlayerDstHealthDamageHitMechanic	Slam	nostab
 GreerTheBlightbringer	AchievementEligibilityMechanic	Unplagued.Achiv.K	kept
@@ -52,6 +56,7 @@ KainengOverlook	AchievementEligibilityMechanic	MostResi.Achiv.N.G	lost
 KainengOverlook	AchievementEligibilityMechanic	TextReflx.Achiv.K	kept
 KainengOverlook	AchievementEligibilityMechanic	TextReflx.Achiv.L	lost
 KainengOverlook	PlayerDstHealthDamageMechanic	Bomb.D	downed
+MursaatOverseer	PlayerDstBuffApplyMechanic	Protect	applied=1000
 NexusOfEternity	AchievementEligibilityMechanic	TrueVisionary.Achiv.K	kept
 NexusOfEternity	AchievementEligibilityMechanic	TrueVisionary.Achiv.L	lost
 NexusOfEternity	PlayerDstHealthDamageMechanic	WorldpierV.K	killed
@@ -86,8 +91,10 @@ Samarog	PlayerDstHealthDamageHitMechanic	Schk.Wv	nostab
 Samarog	PlayerDstHealthDamageHitMechanic	Stun	nostab
 Samarog	PlayerDstHealthDamageHitMechanic	Swp	nostab
 Samarog	PlayerDstHealthDamageMechanic	CC.Sam Fail	killed
+ShatteredObservatory	PlayerDstBuffApplyMechanic	Eye	applied=3000
 Siax	EnemyCastEndMechanic	CC.S Fail	dur>=15232
 Siax	EnemyCastEndMechanic	Phase Fail	dur>=20649
+Slothasor	PlayerDstBuffApplyMechanic	Fear	applied=8000
 SooWon	PlayerDstHealthDamageMechanic	Failed Green	killed
 SoullessHorror	AchievementEligibilityMechanic	NecDancer.Achiv.K	kept
 SoullessHorror	AchievementEligibilityMechanic	NecDancer.Achiv.L	lost

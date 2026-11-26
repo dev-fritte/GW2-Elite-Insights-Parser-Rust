@@ -47,6 +47,8 @@ function classify(chain) {
     return { '>=': 'dur>=', '<=': 'dur<=', '>': 'dur>', '<': 'dur<' }[m[1]] + m[2];
   }
   if ((m = /^\(\w+,\s*log\)\s*=>\s*(!?)\w+\.IsInterrupted$/.exec(a))) return m[1] ? 'notinterrupted' : 'interrupted';
+  if (/^\(\w+,\s*log\)\s*=>\s*\w+ is AnimatedCastEvent (\w+) && \1\.IsInterrupted$/.test(a)) return 'interrupted';
+  if ((m = /^\(\w+,\s*log\)\s*=>\s*\w+\.AppliedDuration == (\d+)$/.exec(a))) return 'applied=' + m[1];
   if (/^\(\w+,\s*log\)\s*=>\s*\w+\.HealthDamage > 0$/.test(a)) return 'damage';
   if ((m = /^\(\w+,\s*log\)\s*=>\s*(!?)\w+\.Lost$/.exec(a))) return m[1] ? 'kept' : 'lost';
   if (/^\(\w+,\s*log\)\s*=>\s*\w+\.HasKilled$/.test(a)) return 'killed';

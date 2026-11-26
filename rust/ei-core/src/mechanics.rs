@@ -601,17 +601,25 @@ pub fn encounter_mechanics(
     let mut stable: HashMap<usize, Vec<(i64, i64)>> = HashMap::new();
     let achievements = achievement_events(kept, players, &spans, &active, fight, trigger_id, &defs);
     let enemy_names = enemy_names(kept, table, targets, offset);
-    let casts = if defs
-        .iter()
-        .any(|m| matches!(m.kind, Kind::EnemyCastStart | Kind::EnemyCastEnd))
-    {
-        enemy_casts(kept, &enemy_names)
+    let casts = if defs.iter().any(|m| {
+        matches!(
+            m.kind,
+            Kind::EnemyCastStart | Kind::EnemyCastEnd | Kind::PlayerCastStart
+        )
+    }) {
+        let mut casters = enemy_names.clone();
+        let squad: std::collections::HashSet<u64> = players.iter().map(|p| p.address).collect();
+        casters.extend(players.iter().map(|p| (p.address, p.character.clone())));
+        enemy_casts(kept, &casters, &squad)
     } else {
         Vec::new()
     };
     defs.iter()
         .map(|m| match m.kind {
-            Kind::PlayerDstHit | Kind::PlayerDstBuffApply | Kind::PlayerDstDamage => MechanicRow {
+            Kind::PlayerDstHit
+            | Kind::PlayerDstBuffApply
+            | Kind::PlayerDstDamage
+            | Kind::PlayerDstBuffRemove => MechanicRow {
                 name: m.name,
                 events: player_events(kept, m, offset, duration, &index_of, &mut |i, time| {
                     stable
@@ -620,6 +628,11 @@ pub fn encounter_mechanics(
                         .iter()
                         .any(|&(start, end)| start <= time && time < end)
                 }),
+                enemies: Vec::new(),
+            },
+            Kind::PlayerSrcHit | Kind::PlayerCastStart => MechanicRow {
+                name: m.name,
+                events: player_source_events(kept, m, fight, &casts, &index_of),
                 enemies: Vec::new(),
             },
             Kind::Achievement => MechanicRow {
@@ -636,18 +649,57 @@ pub fn encounter_mechanics(
                     .unwrap_or_default(),
                 enemies: Vec::new(),
             },
-            Kind::EnemyDstBuffApply | Kind::EnemyCastStart | Kind::EnemyCastEnd => MechanicRow {
+            Kind::EnemyDstBuffApply
+            | Kind::EnemyDstBuffRemove
+            | Kind::EnemyCastStart
+            | Kind::EnemyCastEnd
+            | Kind::Spawn => MechanicRow {
                 name: m.name,
                 events: Vec::new(),
-                enemies: enemy_events(kept, m, fight, &enemy_names, &casts),
+                enemies: enemy_events(kept, table, m, fight, &enemy_names, &casts),
             },
         })
         .collect()
 }
 
+/// The events of the mechanics that look at what players do: hits and the start of casts.
+fn player_source_events(
+    kept: &Kept,
+    m: &ei_data::mechanics::Mechanic,
+    fight: Fight,
+    casts: &[EnemyCast],
+    index_of: &dyn Fn(u64) -> Option<usize>,
+) -> Vec<(i64, usize)> {
+    let mut events: Vec<(i64, usize)> = if m.kind == ei_data::mechanics::Kind::PlayerCastStart {
+        casts
+            .iter()
+            .filter(|c| m.ids.contains(&c.skill) && cast_filter(m.filter, c))
+            .filter_map(|c| Some((c.start - fight.offset, index_of(c.address)?)))
+            .collect()
+    } else {
+        kept.events
+            .iter()
+            .filter(|e| {
+                e.state_change == sc::COMBAT
+                    && e.src_agent != 0
+                    && m.ids.contains(&i64::from(e.skill_id))
+                    && if e.is_buff == 0 {
+                        DIRECT_HIT_RESULTS.contains(&e.result)
+                    } else {
+                        BUFF_HIT_RESULTS.contains(&e.result)
+                    }
+            })
+            .filter_map(|e| Some((e.time - fight.offset, index_of(e.src_agent)?)))
+            .collect()
+    };
+    events.retain(|(time, _)| (0..=fight.duration).contains(time));
+    events
+}
+
 /// The events of a mechanic on enemies: time in the fight and name of the enemy.
 fn enemy_events(
     kept: &Kept,
+    table: evtc_ingest::AgentTable<'_>,
     m: &ei_data::mechanics::Mechanic,
     fight: Fight,
     names: &HashMap<u64, String>,
@@ -655,25 +707,40 @@ fn enemy_events(
 ) -> Vec<(i64, String)> {
     use ei_data::mechanics::Kind;
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
-    let mut events: Vec<(i64, String)> = if m.kind == Kind::EnemyDstBuffApply {
+    let mut events: Vec<(i64, String)> = if m.kind == Kind::Spawn {
+        m.ids
+            .iter()
+            .flat_map(|&id| crate::encounter::species_first_seen(kept, table, id))
+            .filter_map(|(address, first)| {
+                Some((first - fight.offset, names.get(&address)?.clone()))
+            })
+            .collect()
+    } else if matches!(m.kind, Kind::EnemyDstBuffApply | Kind::EnemyDstBuffRemove) {
         kept.events
             .iter()
-            .filter(|e| {
-                e.dst_agent != 0
-                    && m.ids.contains(&i64::from(e.skill_id))
-                    && matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
-            })
             .filter_map(|e| {
-                Some((
-                    e.time - fight.offset,
-                    names.get(&redirect(e.dst_agent))?.clone(),
-                ))
+                let removal = e.state_change == sc::BUFF_REMOVE_ALL;
+                let wanted = m.ids.contains(&i64::from(e.skill_id))
+                    && if m.kind == Kind::EnemyDstBuffApply {
+                        matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+                    } else {
+                        removal
+                    };
+                let agent = if removal { e.src_agent } else { e.dst_agent };
+                if !wanted || agent == 0 {
+                    return None;
+                }
+                Some((e.time - fight.offset, names.get(&redirect(agent))?.clone()))
             })
             .collect()
     } else {
         casts
             .iter()
-            .filter(|c| m.ids.contains(&c.skill) && cast_filter(m.filter, c))
+            .filter(|c| {
+                names.contains_key(&c.address)
+                    && m.ids.contains(&c.skill)
+                    && cast_filter(m.filter, c)
+            })
             .map(|c| {
                 let time = if m.kind == Kind::EnemyCastStart {
                     c.start
@@ -1104,9 +1171,17 @@ fn player_events(
     has_stability: &mut dyn FnMut(usize, i64) -> bool,
 ) -> Vec<(i64, usize)> {
     use ei_data::mechanics::{Filter, Kind};
+    // the agent that lost the buffs is the source of a removal, the target of the other records
+    let affected = |e: &evtc_ingest::CombatRecord| {
+        if e.state_change == sc::BUFF_REMOVE_ALL {
+            e.src_agent
+        } else {
+            e.dst_agent
+        }
+    };
     kept.events
         .iter()
-        .filter(|e| e.dst_agent != 0 && m.ids.contains(&i64::from(e.skill_id)))
+        .filter(|e| affected(e) != 0 && m.ids.contains(&i64::from(e.skill_id)))
         .filter(|e| match m.kind {
             Kind::PlayerDstHit => {
                 e.state_change == sc::COMBAT
@@ -1117,6 +1192,7 @@ fn player_events(
                     }
             }
             Kind::PlayerDstDamage => e.state_change == sc::COMBAT,
+            Kind::PlayerDstBuffRemove => e.state_change == sc::BUFF_REMOVE_ALL,
             _ => matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL),
         })
         .filter(|e| match m.filter {
@@ -1127,12 +1203,13 @@ fn player_events(
                     e.buff_dmg > 0
                 }
             }
+            Filter::AppliedDuration(n) => i64::from(e.value) == n,
             Filter::Killed => e.result == KILLING_BLOW,
             Filter::Downed => e.result == DOWNED,
             Filter::DownedOrKilled => e.result == KILLING_BLOW || e.result == DOWNED,
             _ => true,
         })
-        .filter_map(|e| Some((e, index_of(e.dst_agent)?)))
+        .filter_map(|e| Some((e, index_of(affected(e))?)))
         .filter(|(e, i)| {
             m.filter != Filter::NoStability || !has_stability(*i, e.time - offset - SERVER_DELAY)
         })
@@ -1332,6 +1409,7 @@ fn rank_prefixes(kept: &Kept) -> HashMap<u64, &'static str> {
 
 /// An animated cast by an enemy (`AnimatedCastEvent`).
 struct EnemyCast {
+    address: u64,
     caster: String,
     skill: i64,
     start: i64,
@@ -1343,7 +1421,11 @@ struct EnemyCast {
 /// the next end of the same skill; a start that never ends lasts as long as expected, but at most
 /// until the next cast of the caster starts; an end without a start belongs to a cast that began
 /// before the log.
-fn enemy_casts(kept: &Kept, enemies: &HashMap<u64, String>) -> Vec<EnemyCast> {
+fn enemy_casts(
+    kept: &Kept,
+    enemies: &HashMap<u64, String>,
+    squad: &std::collections::HashSet<u64>,
+) -> Vec<EnemyCast> {
     const CANCEL: u8 = 4;
     const ANIM_WITH_SCALED_DURATIONS: i32 = 20_191_107;
     type Open<'a> = HashMap<(u64, u32), &'a evtc_ingest::CombatRecord>;
@@ -1421,8 +1503,11 @@ fn enemy_casts(kept: &Kept, enemies: &HashMap<u64, String>) -> Vec<EnemyCast> {
     }
     casts
         .into_iter()
+        // casts of players that last at most 1 ms are dropped
+        .filter(|c| !(squad.contains(&c.0) && c.3 <= 1))
         .map(
             |(caster, skill, start, duration, _, interrupted)| EnemyCast {
+                address: caster,
                 caster: enemies[&caster].clone(),
                 skill: i64::from(skill),
                 start,

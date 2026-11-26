@@ -1601,8 +1601,8 @@ pub fn challenge_mode(kept: &Kept, table: AgentTable<'_>) -> bool {
             let removed = c.kept.events.iter().any(|e| {
                 e.state_change == sc::BUFF_REMOVE_ALL
                     && i64::from(e.skill_id) == skill::DAGDA_DEMONIC_AURA
-                    && e.dst_agent != 0
-                    && c.redirect(e.dst_agent) == dagda.address
+                    && e.src_agent != 0
+                    && c.redirect(e.src_agent) == dagda.address
             });
             let timer = c.kept.events.iter().any(|e| {
                 matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
@@ -1888,6 +1888,20 @@ pub fn adina_hands(kept: &Kept, offset: i64) -> Vec<Target> {
             }
         })
         .collect()
+}
+
+/// The agents of a species with the first time of each (offset not applied), ordered by it.
+#[must_use]
+pub(crate) fn species_first_seen(kept: &Kept, table: AgentTable<'_>, id: i64) -> Vec<(u64, i64)> {
+    let spans = spans(kept);
+    u32::try_from(id)
+        .map(|id| {
+            species_agents(table, &spans, id)
+                .into_iter()
+                .map(|a| (a.address, a.first))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The addresses of the agents of the trash mob species of the logic (`LogLogic.TrashMobs`).

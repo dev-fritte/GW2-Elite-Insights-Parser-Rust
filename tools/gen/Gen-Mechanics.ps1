@@ -20,11 +20,21 @@ $kinds = @{
     'EnemyCastEndMechanic' = 'EnemyCastEnd'
     'EnemyDstBuffApplyMechanic' = 'EnemyDstBuffApply'
     'AchievementEligibilityMechanic' = 'Achievement'
+    'SpawnMechanic' = 'Spawn'
+    'EnemyDstBuffRemoveMechanic' = 'EnemyDstBuffRemove'
+    'PlayerDstBuffRemoveMechanic' = 'PlayerDstBuffRemove'
+    'PlayerSrcHealthDamageHitMechanic' = 'PlayerSrcHit'
+    'PlayerCastStartMechanic' = 'PlayerCastStart'
 }
 # the filters each kind can evaluate ('dur' stands for the duration comparisons)
 $allowed = @{
     'PlayerDstHit' = @('', 'nostab', 'damage')
-    'PlayerDstBuffApply' = @('')
+    'PlayerDstBuffApply' = @('', 'applied')
+    'Spawn' = @('')
+    'EnemyDstBuffRemove' = @('')
+    'PlayerDstBuffRemove' = @('')
+    'PlayerSrcHit' = @('')
+    'PlayerCastStart' = @('', 'dur', 'interrupted', 'notinterrupted')
     'PlayerDstDamage' = @('killed', 'downed', 'downedorkilled')
     'EnemyCastStart' = @('', 'dur', 'interrupted', 'notinterrupted')
     'EnemyCastEnd' = @('', 'dur', 'interrupted', 'notinterrupted')
@@ -45,6 +55,7 @@ function Get-FilterExpr([string]$code) {
         '^killed$' { return 'Filter::Killed' }
         '^downed$' { return 'Filter::Downed' }
         '^downedorkilled$' { return 'Filter::DownedOrKilled' }
+        '^applied=(\d+)$' { return "Filter::AppliedDuration($($Matches[1]))" }
         '^interrupted$' { return 'Filter::Interrupted' }
         '^notinterrupted$' { return 'Filter::NotInterrupted' }
         '^dur>=(\d+)$' { return "Filter::DurationAtLeast($($Matches[1]))" }
@@ -77,6 +88,16 @@ L '    /// One of the buffs applied to an enemy (`EnemyDstBuffApplyMechanic`).'
 L '    EnemyDstBuffApply,'
 L '    /// The loss or keeping of an achievement; the ids are achievement ids (`AchievementEligibilityMechanic`).'
 L '    Achievement,'
+L '    /// An agent of one of the species appears (`SpawnMechanic`); the ids are species ids.'
+L '    Spawn,'
+L '    /// All stacks of a buff are removed from an enemy (`EnemyDstBuffRemoveMechanic`).'
+L '    EnemyDstBuffRemove,'
+L '    /// All stacks of a buff are removed from a player (`PlayerDstBuffRemoveMechanic`).'
+L '    PlayerDstBuffRemove,'
+L '    /// A hit of a player with one of the skills (`PlayerSrcHealthDamageHitMechanic`).'
+L '    PlayerSrcHit,'
+L '    /// The start of an animated cast of one of the skills by a player (`PlayerCastStartMechanic`).'
+L '    PlayerCastStart,'
 L '}'
 L ''
 L '/// The check a mechanic adds to its kind (the lambda of `UsingChecker`).'
@@ -106,6 +127,8 @@ L '    /// The achievement was lost (`Lost`).'
 L '    Lost,'
 L '    /// The achievement was kept (`!Lost`).'
 L '    Kept,'
+L '    /// The buff was applied for exactly so long in ms (`AppliedDuration == n`).'
+L '    AppliedDuration(i64),'
 L '    /// The cast was interrupted.'
 L '    Interrupted,'
 L '    /// The cast was not interrupted.'
@@ -144,8 +167,10 @@ foreach ($r in ($rows | Sort-Object { [int]$_.Trigger })) {
         $code = $filterOf["$($r.Logic)|$($r.Type)|$($r.Short)"]
         if (-not $code) { continue }
     }
-    $base = if ($code -match '^dur') { 'dur' } else { $code }
+    $base = if ($code -match '^dur') { 'dur' } elseif ($code -match '^applied=') { 'applied' } else { $code }
     if ($allowed[$kind] -notcontains $base) { continue }
+    # negative ids are gadget interactions and emotes, no animated casts
+    if ($kind -eq 'PlayerCastStart' -and $r.Ids -match '-') { continue }
     $name = $r.Short.Replace('\', '\\').Replace('"', '\"')
     L ("    Mechanic {{ trigger_id: {0}, kind: Kind::{1}, filter: {8}, ids: &[{2}], name: ""{3}"", builds: ({4}, {5}), evtc_builds: ({6}, {7}) }}," -f $r.Trigger, $kind, $r.Ids, $name, $r.MinBuild, $r.MaxBuild, $r.MinEvtc, $r.MaxEvtc, (Get-FilterExpr $code))
     $n++
