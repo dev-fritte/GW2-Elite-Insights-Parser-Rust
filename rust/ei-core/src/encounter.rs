@@ -25,6 +25,8 @@ const ICEBROOD_REWARDS: [u64; 8] = [993, 1035, 1028, 1091, 1032, 1007, 1052, 103
 const OLD_RAID_REWARD_2: i32 = 60_685;
 /// `RewardTypes.CurrentRaidReward`.
 const CURRENT_RAID_REWARD: i32 = 22_797;
+/// `RewardTypes.PostEoDRaidEncounterReward`: the reward of the raid encounters after End of Dragons.
+const POST_EOD_RAID_ENCOUNTER_REWARD: i32 = 29_453;
 /// `ParserHelper.ServerDelayConstant`.
 const SERVER_DELAY: i64 = 10;
 /// `TargetID.Instance`.
@@ -1052,6 +1054,20 @@ fn generic_end(c: &Ctx<'_>, target: &Agent, player_addresses: &[u64]) -> End {
     if chest_position(kept.trigger_id).is_some()
         && let Some(reward) = c.first_with(|e| {
             e.state_change == sc::REWARD && e.value == CURRENT_RAID_REWARD && e.time - c.offset > 0
+        })
+    {
+        return End {
+            success: true,
+            time: reward.time,
+        };
+    }
+    // the raid encounters of Secret of the Obscure end with their own reward record
+    // (RaidEncounterLogic.CheckPostEODRewardSuccess)
+    if matches!(kept.trigger_id, 25_989 | 25_705)
+        && let Some(reward) = c.first_with(|e| {
+            e.state_change == sc::REWARD
+                && e.value == POST_EOD_RAID_ENCOUNTER_REWARD
+                && e.time - c.offset > 0
         })
     {
         return End {
