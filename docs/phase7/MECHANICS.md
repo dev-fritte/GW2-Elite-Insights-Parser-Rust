@@ -36,6 +36,7 @@ Zeiten sind relativ zum Kampfbeginn, nur Ereignisse im Kampf zählen.
 | `SpawnMechanic` | 18 | erstes Auftreten der Agenten der Spezies (Gegner) |
 | `EnemyDstBuffRemoveMechanic`, `PlayerDstBuffRemoveMechanic` | 5, 4 | Entfernen aller Stapel (Datensatz "Entfernen alle"; betroffen ist die Quelle des Datensatzes, nicht das Ziel) von einem Gegner, von einem Spieler |
 | `PlayerSrcHealthDamageHitMechanic` | 10 | Treffer eines Spielers mit der Fertigkeit |
+| `PlayerSrcBuffApplyMechanic` | 4 | Buff-Anwendung eines Spielers (Quelle ist der Spieler, bei Dienern ihr Besitzer; nur Prüfung der Spezies des Ziels) |
 | `PlayerCastStartMechanic` | 8 | Beginn eines animierten Zaubers eines Spielers (Zauber mit höchstens 1 ms fallen weg; negative Ids sind Interaktionen und Gesten, keine Zauber) |
 
 Gegner sind die Ziele der Logik und die Trash-Mobs ihrer Spezies-Liste (`GetTrashMobsIDs`, schon in `ei-data/targets`). Die animierten Zauber werden wie `CombatEventFactory.CreateCastEvents` gepaart: ein Beginn mit dem nächsten Ende derselben Fertigkeit (weicht die Dauer um mehr als 10 ms von der Zeit zwischen den Datensätzen ab, zählt diese), ein Beginn ohne Ende dauert die erwartete Zeit, höchstens bis zum Beginn des nächsten Zaubers des Wirkenden plus 10 ms, ein Ende ohne Beginn nur, wenn der Zauber vor dem Log begann. Nur Logs mit den Datensätzen für Animationsbeginn und -ende (arcdps ab 2019) sind ausgewertet.
@@ -52,6 +53,7 @@ Lambdas lassen sich nicht per Reflexion lesen. `node tools/gen/Extract-Checkers.
 | `dur>=n`, `dur>n`, `dur<n`, `dur<=n` (32) | Zauberende, Zauberbeginn von Gegnern | tatsächliche Dauer des Zaubers |
 | `interrupted`, `notinterrupted` (6) | Zauberbeginn und -ende | Endedatensatz mit Aktivierung 4 (Abbruch) |
 | `applied=n` (3) | Buff auf Spieler | angewendete Dauer genau n ms |
+| `species:to=…`, `species:by=…` (37, davon 36 ausgewertet) | Treffer, Buff-Anwendung, Schaden, Buff-Entfernen | Spezies des Ziels (`To.IsSpecies`) oder der Quelle (`By`, `From`, `CreditedBy`, `CreditedFrom`, `IsAnySpecies`): die Spezies-IDs stammen aus dem Enum `TargetID` (`SpeciesIDs.cs`), die Spezies eines Agenten aus der Agententabelle (NPC: Profession, Gadget: untere 16 Bit). Beim Entfernen aller Stapel ist die Quelle des Datensatzes das Ziel und das Ziel des Datensatzes die Quelle. Der Besitzer von Dienern (`GetFinalMaster`) ist nicht aufgelöst; in den 103 Logs ist das nicht nötig |
 
 ### Erfolgsbedingungen
 
@@ -67,9 +69,11 @@ Noch ohne Auswertung: `SubMechanic` (27), `EnemyStatus` (10), die Effekt-Mechani
 
 ## Messung (103 Korpus-Logs)
 
-Encounter-Mechaniken auf Spielern aus Daten: 1.471 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **keine Abweichung**.
+Encounter-Mechaniken auf Spielern aus Daten: 1.521 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **keine Abweichung**.
 
-Mechaniken auf Gegnern: 218 Vergleiche der Zeiten, **keine Abweichung**. Die Namen der Gegner entsprechen denen von C# (`enemy_names` in `mechanics.rs`): Gleichnamige Ziele werden wie `NumericallyRenameSpecies` mit einer Zahl versehen; danach folgen die Umbenennungen der Logiken, die sich aus dem Log ergeben (Cerus: "Empowered …" bei dem Buff beim Auftauchen und "… (Permanent)" für Verkörperungen, die mit Cerus auftauchen und eine eigene Zählung haben; Deimos: Dieb, Trunkenbold, Spieler; Greer: "Godspoil Greer" mit Ereg; Ura: "Ura, the Steamshrieker" oder "Godscream Ura" nach den Lebenspunkten, vor arcdps 2026-09-29 "Elite/Champion/Legendary" für die Adds; Ai: "Elemental Ai, Keeper of the Peak") und zuletzt der Rang aus den Agenten-Informationen ("Veteran ", "Elite ", "Champion ", "Legendary "; arcdps ab 2026-09-29). Nicht portiert: die dunkle Ai, die Instanz Sunqua Peak, die Namen der übrigen Logiken (Splitter, Herzen, Phasen-Ziele, Xera und andere) und die Gemeinschaftsfarben der Trash-Mobs.
+Mechaniken auf Gegnern: 221 Vergleiche der Zeiten, **keine Abweichung**. Die Namen der Gegner entsprechen denen von C# (`enemy_names` in `mechanics.rs`): Gleichnamige Ziele werden wie `NumericallyRenameSpecies` mit einer Zahl versehen; danach folgen die Umbenennungen der Logiken, die sich aus dem Log ergeben (Cerus: "Empowered …" bei dem Buff beim Auftauchen und "… (Permanent)" für Verkörperungen, die mit Cerus auftauchen und eine eigene Zählung haben; Deimos: Dieb, Trunkenbold, Spieler; Greer: "Godspoil Greer" mit Ereg; Ura: "Ura, the Steamshrieker" oder "Godscream Ura" nach den Lebenspunkten, vor arcdps 2026-09-29 "Elite/Champion/Legendary" für die Adds; Ai: "Elemental Ai, Keeper of the Peak") und zuletzt der Rang aus den Agenten-Informationen ("Veteran ", "Elite ", "Champion ", "Legendary "; arcdps ab 2026-09-29). Nicht portiert: die dunkle Ai, die Instanz Sunqua Peak, die Namen der übrigen Logiken (Splitter, Herzen, Phasen-Ziele, Xera und andere) und die Gemeinschaftsfarben der Trash-Mobs.
+
+Abdeckung (`mechanics (not produced)`): 227 Paare aus Log und Mechanik, die C# mit Ereignissen meldet, erzeugt Rust noch nicht (vorher 264), darunter Untermechaniken, Effekt-Mechaniken, Buff-Zustände von Gegnern und Lambdas anderer Form.
 
 Allgemeine Mechaniken:
 
