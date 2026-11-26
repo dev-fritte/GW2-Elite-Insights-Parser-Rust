@@ -1536,6 +1536,16 @@ pub fn log_end_detail(
             minister_li_end(&c, player_addresses)
                 .unwrap_or_else(|| generic_end(&c, &target, player_addresses))
         }
+        // `Deimos.HandleDeimosAndItsGadgets` stretches the target to the end of the log (the 10 %
+        // body struct is merged into it); the rules of the merged struct are not ported
+        species::target_id::DEIMOS => generic_end(
+            &c,
+            &Agent {
+                last: kept.log_end_time,
+                ..target
+            },
+            player_addresses,
+        ),
         species::target_id::KANAXAI_SCYTHE_OF_HOUSE_AURKUS_CM => kanaxai_end(&c, &target),
         species::target_id::PROTOTYPE_VERMILION | species::target_id::PROTOTYPE_VERMILION_CM => {
             old_lions_court_end(&c, &target, player_addresses)
