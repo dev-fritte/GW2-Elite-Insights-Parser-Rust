@@ -23,11 +23,11 @@ Vergleich mit `logStartOffset` und `durationMS` des C#-Referenz-JSON:
 | Größe | identisch |
 | --- | ---: |
 | Kampfbeginn | 102 von 103 (nur generisch: 63) |
-| Dauer | 98 von 103 (nur Tod-Fall: 27; mit Truhe: 68; mit Belohnungsdatensätzen und eigenen Regeln: 98) |
+| Dauer | 99 von 103 (nur Tod-Fall: 27; mit Truhe: 68; mit Belohnungsdatensätzen und eigenen Regeln: 99) |
 
 Aufruf: `ei-parity ... --offsets`; er listet je Encounter die Logs mit Abweichung und Beispiele.
 
-Die 5 Logs mit abweichender Dauer: Deimos (CM-Log, 1 Log; Kampfende über den Zusammenschluss bei 10 % und Angriffsziel-Ereignisse), Drachenleere (2 Logs; Kampfende über Angriffsziele von Soo-Won und Liftoff-Casts), Seelenverzehrer (1 Log; der Kampfbeginn liegt 1.000 ms daneben) und ein Cerus-Log mit 1 ms Abweichung (beide Ursachen nicht gefunden).
+Die 4 Logs mit abweichender Dauer: Drachenleere (2 Logs; Kampfende über Angriffsziele von Soo-Won und Liftoff-Casts), Seelenverzehrer (1 Log; der Kampfbeginn liegt 1.000 ms daneben) und ein Cerus-Log mit 1 ms Abweichung (beide Ursachen nicht gefunden).
 
 ## Zielliste und Vollkampf-Phase
 
@@ -46,7 +46,7 @@ Die übrigen rund 25 Logs mit Phasen (rund 20 Encounter) haben jeweils eigene Ph
 ## Nicht portiert (Ursachen der Abweichungen)
 
 - **Kampfbeginn:** nur Seelenverzehrer (keine eigene Regel in C#; der Agent hat in Rust den ersten Datensatz bei 1 ms, die Referenz beginnt bei 1.001 ms; Ursache nicht gefunden). Die Bandit-Trio-Regel lässt die Prüfung der Trash-Mobs weg, weil die C#-Funktion IsInBoundingBox den Kasten auf einen Punkt verkleinert (sie vergleicht mit der ersten Ecke statt mit beiden) und nie zutrifft.
-- **Kampfende:** Deimos (Zusammenschluss bei 10 %, Angriffsziele), Drachenleere (HarvestTemple.CheckSuccess), Kampfausstieg (CombatExit, nur Xera und Qadim als Rückfall) und die übrigen CheckSuccess-Überschreibungen (zuletzt rund 45 Dateien; Encounter ohne Log im Korpus sind ungeprüft).
+- **Kampfende:** Deimos nur ohne die Regeln des Zusammenschlusses bei 10 % (`Deimos.CheckSuccess` mit Angriffszielen; die Ziel-Zeit reicht wie in C# bis zum Log-Ende, das deckt den Fehlschlag im Korpus), Drachenleere (HarvestTemple.CheckSuccess), Kampfausstieg (CombatExit, nur Xera und Qadim als Rückfall) und die übrigen CheckSuccess-Überschreibungen (zuletzt rund 45 Dateien; Encounter ohne Log im Korpus sind ungeprüft).
 - **Phasen, Zielliste, Schaden je Ziel und Phase, freundliche NPCs, Modus (CM), Mechaniken, Erfolgsbedingungen.**
 
 ## Nächste Schritte
