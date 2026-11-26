@@ -67,7 +67,12 @@ pub fn compare_log(
                 .collect()
         })
         .unwrap_or_default();
-    let our_targets: Vec<i64> = ours.targets.iter().map(|t| i64::from(t.species)).collect();
+    let our_targets: Vec<i64> = ours
+        .targets
+        .iter()
+        .map(|t| i64::from(t.species))
+        .filter(|id| *id > 0)
+        .collect();
     if our_targets == expected_targets {
         s.targets_ok += 1;
     } else if s.target_examples.len() < 3 {
@@ -80,7 +85,7 @@ pub fn compare_log(
         && reference
             .get("targets")
             .and_then(Value::as_array)
-            .is_some_and(|t| t.len() == our_targets.len())
+            .is_some_and(|t| t.len() == ours.targets.len())
     {
         let mut expected: Vec<(i64, i64)> = reference
             .get("phases")

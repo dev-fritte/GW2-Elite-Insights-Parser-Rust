@@ -2050,6 +2050,46 @@ pub fn species_first_times(kept: &Kept, table: AgentTable<'_>, offset: i64, id: 
         .collect()
 }
 
+/// The embodiments that appear together with Cerus become permanent ones, a species of their own
+/// (`TempleOfFebe.EIEvtcParse`: the first agent of each embodiment species that first appears
+/// within 50 ms of Cerus). Address to the negative species id.
+fn permanent_embodiments(
+    kept: &Kept,
+    table: AgentTable<'_>,
+    spans: &HashMap<u64, (i64, i64)>,
+) -> HashMap<u64, i32> {
+    use species::target_id as id;
+    let mut out = HashMap::new();
+    if i32::from(kept.trigger_id) != id::CERUS {
+        return out;
+    }
+    let Some(cerus) = species_agents(table, spans, 25_989)
+        .first()
+        .map(|a| a.first)
+    else {
+        return out;
+    };
+    for (embodiment, permanent) in [
+        (id::EMBODIMENT_OF_GLUTTONY, -53),
+        (id::EMBODIMENT_OF_RAGE, -54),
+        (id::EMBODIMENT_OF_DESPAIR, -55),
+        (id::EMBODIMENT_OF_REGRET, -56),
+        (id::EMBODIMENT_OF_ENVY, -57),
+        (id::EMBODIMENT_OF_MALICE, -58),
+    ] {
+        let Ok(embodiment) = u32::try_from(embodiment) else {
+            continue;
+        };
+        if let Some(agent) = species_agents(table, spans, embodiment)
+            .iter()
+            .find(|a| (cerus - a.first).abs() < 50)
+        {
+            out.insert(agent.address, permanent);
+        }
+    }
+    out
+}
+
 /// The targets of the encounter: the agents of the species its logic lists, ordered by first
 /// appearance and then by the sort keys of the logic (`LogLogic.ComputeLogTargets`).
 ///
@@ -2119,6 +2159,7 @@ pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
             .copied()
             .unwrap_or(i64::MIN)
     };
+    let permanent = permanent_embodiments(kept, table, &spans);
     // agents in the order of the agent table, like C# lists them before it sorts
     let mut candidates: Vec<(Target, u16, String, u16)> = Vec::new();
     for agent in table.iter() {
@@ -2130,6 +2171,7 @@ pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
         let Ok(species) = i32::try_from(species) else {
             continue;
         };
+        let species = permanent.get(&agent.address()).copied().unwrap_or(species);
         let Some(&(first, last)) = spans.get(&agent.address()) else {
             continue;
         };

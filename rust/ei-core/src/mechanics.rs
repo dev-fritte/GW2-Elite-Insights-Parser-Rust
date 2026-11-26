@@ -1664,25 +1664,10 @@ fn enemy_names(
     };
     let rank = rank_prefixes(kept);
     let mut names = HashMap::new();
-    // the embodiments that appear together with Cerus become permanent ones (another species)
-    let cerus = targets
-        .iter()
-        .find(|t| t.species == ei_data::species_ids::target_id::CERUS);
-    let permanent = |t: &crate::encounter::Target| {
-        use ei_data::species_ids::target_id as id;
-        matches!(
-            t.species,
-            id::EMBODIMENT_OF_DESPAIR
-                | id::EMBODIMENT_OF_ENVY
-                | id::EMBODIMENT_OF_GLUTTONY
-                | id::EMBODIMENT_OF_MALICE
-                | id::EMBODIMENT_OF_RAGE
-                | id::EMBODIMENT_OF_REGRET
-        ) && cerus.is_some_and(|c| (c.first - t.first).abs() < 50)
-    };
-    let species_of = |t: &crate::encounter::Target| {
-        if permanent(t) { -t.species } else { t.species }
-    };
+    // the embodiments that appear together with Cerus are of a species of their own (the
+    // negative ids of the permanent embodiments)
+    let permanent = |t: &crate::encounter::Target| (-58..=-53).contains(&t.species);
+    let species_of = |t: &crate::encounter::Target| t.species;
     let mut counts: HashMap<i32, usize> = HashMap::new();
     for t in targets {
         *counts.entry(species_of(t)).or_default() += 1;
