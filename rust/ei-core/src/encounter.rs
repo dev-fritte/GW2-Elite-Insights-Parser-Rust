@@ -75,7 +75,52 @@ pub(crate) fn spans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
             touch(redirect(e.dst_agent), e.time);
         }
     }
+    assign_orphans(kept, &mut spans);
     spans
+}
+
+/// Records that name an agent only by its instance id (no address) belong to the agent with that
+/// instance id that is known around that time (`orphanedSrcInstidCombatItems` of
+/// `CompleteAgentsAndLogData`); they stretch the times the agent is known.
+fn assign_orphans(kept: &Kept, spans: &mut HashMap<u64, (i64, i64)>) {
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    // the instance id of every agent: the first one its records carry
+    let mut instids: HashMap<u64, u16> = HashMap::new();
+    let mut src_orphans = Vec::new();
+    let mut dst_orphans = Vec::new();
+    for e in &kept.events {
+        if src_is_agent(e.state_change) && e.src_instid != 0 {
+            if e.src_agent == 0 {
+                src_orphans.push((e.time, e.src_instid));
+            } else {
+                instids.entry(redirect(e.src_agent)).or_insert(e.src_instid);
+            }
+        }
+        if dst_is_agent(e.state_change) && e.dst_instid != 0 {
+            if e.dst_agent == 0 {
+                dst_orphans.push((e.time, e.dst_instid));
+            } else {
+                instids.entry(redirect(e.dst_agent)).or_insert(e.dst_instid);
+            }
+        }
+    }
+    for (time, instid) in src_orphans.into_iter().chain(dst_orphans) {
+        let mut candidates: Vec<(u64, i64, i64)> = instids
+            .iter()
+            .filter(|&(_, &i)| i == instid)
+            .filter_map(|(a, _)| spans.get(a).map(|&(first, last)| (*a, first, last)))
+            .collect();
+        candidates.sort_by_key(|c| (c.1, c.0));
+        let aware = |&(_, first, last): &(u64, i64, i64), t: i64| (first..=last).contains(&t);
+        if let Some(found) = candidates
+            .iter()
+            .find(|c| aware(c, time - 300) || aware(c, time + 300))
+            && let Some(span) = spans.get_mut(&found.0)
+        {
+            span.0 = span.0.min(time);
+            span.1 = span.1.max(time);
+        }
+    }
 }
 
 /// Non player characters of one species, ordered by first appearance.
