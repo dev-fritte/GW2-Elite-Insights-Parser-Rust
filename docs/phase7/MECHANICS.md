@@ -55,6 +55,7 @@ Lambdas lassen sich nicht per Reflexion lesen. `node tools/gen/Extract-Checkers.
 | `dur>=n`, `dur>n`, `dur<n`, `dur<=n` (32) | Zauberende, Zauberbeginn von Gegnern | tatsächliche Dauer des Zaubers |
 | `interrupted`, `notinterrupted` (6) | Zauberbeginn und -ende | Endedatensatz mit Aktivierung 4 (Abbruch) |
 | `speciesbuff` (13) | Buff-Anwendung auf Gegner | das Ziel ist von der Spezies und hat einen Buff (nicht), `ServerDelayConstant` vor dem Ereignis (`To.IsSpecies(X) && [!]To.HasBuff(log, Buff, Time[ - Delay])`): Febe (Verkörperungen mit und ohne Stärkung), Soo-Won. Der Buff kommt aus der Simulation von `ei-buffs` für den Gegner (die Simulation läuft je Gegner und Buff einmal). Die mit Cerus auftauchenden permanenten Verkörperungen sind in C# eine eigene Spezies und zählen nicht als die normale |
+| `sub:…:stab`, `sub:…:nostab` (19 Untermechaniken, 24 mit den Wiederholungen je Trigger) | Untermechanik von `WithStabilitySubMechanic` | die Untermechanik hat die Ereignisse der Mutter, bei denen der Spieler 10 ms vorher Stabilität hat (`stab`) oder nicht hat (`nostab`); eine ignorierte Mutter (`UsingIgnored`) erscheint nicht selbst. Untermechaniken mit eigenem Lambda (Bee, Tank Eaten) sind nicht portiert |
 | `applied=n` (3) | Buff auf Spieler | angewendete Dauer genau n ms |
 | `species:to=…`, `species:by=…` (37, davon 36 ausgewertet) | Treffer, Buff-Anwendung, Schaden, Buff-Entfernen | Spezies des Ziels (`To.IsSpecies`) oder der Quelle (`By`, `From`, `CreditedBy`, `CreditedFrom`, `IsAnySpecies`): die Spezies-IDs stammen aus dem Enum `TargetID` (`SpeciesIDs.cs`), die Spezies eines Agenten aus der Agententabelle (NPC: Profession, Gadget: untere 16 Bit). Beim Entfernen aller Stapel ist die Quelle des Datensatzes das Ziel und das Ziel des Datensatzes die Quelle. Der Besitzer von Dienern (`GetFinalMaster`) ist nicht aufgelöst; in den 103 Logs ist das nicht nötig |
 
@@ -68,15 +69,15 @@ Nicht portiert, weil sie eigene Berechnungen haben (mehrere Kämpfe, Buffs): Qad
 
 Die Abklingzeit (ICD) gilt nur im HTML, nicht im JSON, und wird deshalb nicht angewendet. Die Spielerliste ist wie in C# auf aktive Spieler beschränkt.
 
-Noch ohne Auswertung: `SubMechanic` (27), `EnemyStatus` (10), die übrigen Effekt-Typen (`EnemyDstEffect` und andere) und kleinere Typen. Mit anderem Zusatz (Lambda anderer Form, Untermechanik usw.) sind noch rund 400 Einträge aller Typen, darunter die Erfolgsbedingungen ohne Vorlage (siehe oben); sie brauchen je Mechanik Code.
+Noch ohne Auswertung: `SubMechanic` mit eigenem Lambda (8), `EnemyStatus` (10), die übrigen Effekt-Typen (`EnemyDstEffect` und andere) und kleinere Typen. Mit anderem Zusatz (Lambda anderer Form, Untermechanik usw.) sind noch rund 400 Einträge aller Typen, darunter die Erfolgsbedingungen ohne Vorlage (siehe oben); sie brauchen je Mechanik Code.
 
 ## Messung (103 Korpus-Logs)
 
-Encounter-Mechaniken auf Spielern aus Daten: 1.594 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **keine Abweichung**.
+Encounter-Mechaniken auf Spielern aus Daten: 1.674 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **keine Abweichung**.
 
 Mechaniken auf Gegnern: 234 Vergleiche der Zeiten, **keine Abweichung**; bei den Grün-Effekten der Drachenleere (`S.Green`, 2 Logs) benennt C# die Quellen nach Drache und Himmelsrichtung ("Jormag Green E"), Rust nennt sie "Environment" (nur die Namen, `mechanics (enemy names)`). Die Namen der Gegner entsprechen denen von C# (`enemy_names` in `mechanics.rs`): Gleichnamige Ziele werden wie `NumericallyRenameSpecies` mit einer Zahl versehen; danach folgen die Umbenennungen der Logiken, die sich aus dem Log ergeben (Cerus: "Empowered …" bei dem Buff beim Auftauchen und "… (Permanent)" für Verkörperungen, die mit Cerus auftauchen und eine eigene Zählung haben; Deimos: Dieb, Trunkenbold, Spieler; Greer: "Godspoil Greer" mit Ereg; Ura: "Ura, the Steamshrieker" oder "Godscream Ura" nach den Lebenspunkten, vor arcdps 2026-09-29 "Elite/Champion/Legendary" für die Adds; Ai: "Elemental Ai, Keeper of the Peak") und zuletzt der Rang aus den Agenten-Informationen ("Veteran ", "Elite ", "Champion ", "Legendary "; arcdps ab 2026-09-29). Nicht portiert: die dunkle Ai, die Instanz Sunqua Peak, die Namen der übrigen Logiken (Splitter, Herzen, Phasen-Ziele, Xera und andere) und die Gemeinschaftsfarben der Trash-Mobs.
 
-Abdeckung (`mechanics (not produced)`): 185 Paare aus Log und Mechanik, die C# mit Ereignissen meldet, erzeugt Rust noch nicht (vorher 264), darunter Untermechaniken, Effekt-Mechaniken mit Zusatz (Lambda, Lebensdauer), Spieler-Buff-Prüfungen, Quellen-Spezies mit Zusatz und Lambdas anderer Form.
+Abdeckung (`mechanics (not produced)`): 129 Paare aus Log und Mechanik, die C# mit Ereignissen meldet, erzeugt Rust noch nicht (vorher 264), darunter Untermechaniken mit Lambda, Effekt-Mechaniken mit Zusatz (Lambda, Lebensdauer), Spieler-Buff-Prüfungen, Quellen-Spezies mit Zusatz und Lambdas anderer Form.
 
 Allgemeine Mechaniken:
 
