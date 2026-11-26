@@ -1731,6 +1731,78 @@ pub fn challenge_mode(kept: &Kept, table: AgentTable<'_>) -> bool {
     }
 }
 
+/// The positions of the recording player (`RegroupSameAgentsAndDetermineTeams`): when they are
+/// known, an agent of an instance id is only the same one again if the player was far from its
+/// last or first position.
+struct PointOfView {
+    /// Positions of the player: time and x, y, z.
+    path: Vec<(i64, [f32; 3])>,
+    /// First and last position of every agent.
+    ends: HashMap<u64, ([f32; 3], [f32; 3])>,
+}
+
+impl PointOfView {
+    /// `4980`: the render range of 5000 minus 20.
+    const DISTANCE: f32 = 4980.0;
+
+    fn new(kept: &Kept) -> Self {
+        let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+        let player = kept
+            .events
+            .iter()
+            .find(|e| e.state_change == sc::POINT_OF_VIEW)
+            .map(|e| redirect(e.src_agent));
+        let mut path = Vec::new();
+        let mut ends: HashMap<u64, ([f32; 3], [f32; 3])> = HashMap::new();
+        for e in kept
+            .events
+            .iter()
+            .filter(|e| e.state_change == sc::POSITION && e.src_agent != 0)
+        {
+            let point = [
+                f32::from_bits((e.dst_agent & 0xFFFF_FFFF) as u32),
+                f32::from_bits((e.dst_agent >> 32) as u32),
+                f32::from_bits(e.value.cast_unsigned()),
+            ];
+            let address = redirect(e.src_agent);
+            if Some(address) == player {
+                path.push((e.time, point));
+            }
+            ends.entry(address)
+                .and_modify(|(_, last)| *last = point)
+                .or_insert((point, point));
+        }
+        Self { path, ends }
+    }
+
+    /// Whether the positions of the player are used at all.
+    fn is_active(&self) -> bool {
+        !self.path.is_empty()
+    }
+
+    fn distance(a: [f32; 3], b: [f32; 3]) -> f32 {
+        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    }
+
+    /// Whether `next` is the previous agent again: the player was far from where it ended, or far
+    /// from where `next` begins.
+    fn apart(&self, previous: &Target, next: &Target, offset: i64) -> bool {
+        if let Some((_, last)) = self.ends.get(&previous.address)
+            && let Some((_, point)) = self.path.iter().find(|(t, _)| *t > previous.last + offset)
+            && Self::distance(*point, *last) > Self::DISTANCE
+        {
+            return true;
+        }
+        if let Some((first, _)) = self.ends.get(&next.address)
+            && let Some((_, point)) = self.path.iter().rfind(|(t, _)| *t < next.first + offset)
+            && Self::distance(*point, *first) > Self::DISTANCE
+        {
+            return true;
+        }
+        false
+    }
+}
+
 /// Files a regrouped group of agents: a single agent keeps its place, a merged one is new.
 fn flush(
     group: Option<(usize, Target, usize)>,
@@ -2205,6 +2277,7 @@ pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
             .unwrap_or(i64::MIN)
     };
     let permanent = permanent_embodiments(kept, table, &spans);
+    let pov = PointOfView::new(kept);
     // agents in the order of the agent table, like C# lists them before it sorts
     let mut candidates: Vec<(Target, u16, String, u16)> = Vec::new();
     for agent in table.iter() {
@@ -2256,6 +2329,7 @@ pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
                     && p.2 == cand.2
                     && p.3 == cand.3
                     && group_window == window(&cand.0)
+                    && (!pov.is_active() || pov.apart(&p.0, &cand.0, offset))
             });
             if let (Some((_, g, count)), true) = (&mut group, same) {
                 g.first = g.first.min(cand.0.first);
