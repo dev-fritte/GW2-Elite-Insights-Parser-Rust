@@ -942,7 +942,7 @@ fn chest_position(trigger_id: u16) -> Option<[f32; 3]> {
 
 /// `FindChestGadgets`: the gadget that stands at the chest position, never moves and has the
 /// chest hitbox. Returns the first time the gadget is known (`SetSuccessByChestGadget`).
-fn chest_gadget_time(c: &Ctx<'_>, position: [f32; 3]) -> Option<i64> {
+fn chest_gadget_time(c: &Ctx<'_>, position: [f32; 3], hitbox_width: u32) -> Option<i64> {
     // `InchDistanceThresholdSquared`
     const THRESHOLD_SQUARED: f32 = std::f32::consts::SQRT_2 * std::f32::consts::SQRT_2;
     let xy = |dst: u64| {
@@ -955,7 +955,7 @@ fn chest_gadget_time(c: &Ctx<'_>, position: [f32; 3]) -> Option<i64> {
     let gadgets: Vec<Agent> = c
         .table
         .iter()
-        .filter(|a| agent_kind(*a) == AgentKind::Gadget && a.hitbox_width() == 100)
+        .filter(|a| agent_kind(*a) == AgentKind::Gadget && a.hitbox_width() == hitbox_width)
         .filter_map(|a| {
             c.spans.get(&a.address()).map(|&(first, last)| Agent {
                 address: a.address(),
@@ -1038,7 +1038,7 @@ fn generic_end(c: &Ctx<'_>, target: &Agent, player_addresses: &[u64]) -> End {
         };
     }
     if let Some(position) = chest_position(kept.trigger_id)
-        && let Some(time) = chest_gadget_time(c, position)
+        && let Some(time) = chest_gadget_time(c, position, 100)
     {
         return End {
             success: true,
@@ -1068,6 +1068,26 @@ fn generic_end(c: &Ctx<'_>, target: &Agent, player_addresses: &[u64]) -> End {
     End {
         success: false,
         time: target.last,
+    }
+}
+
+/// `HarvestTemple.CheckSuccess`: the grand strike chest gadget ends the fight; without it the
+/// fight fails at the last time of the targets, which the logic stretches to the end of the log.
+/// Not ported: the delayed reward through the targetable state of Soo-Won (no chest in the log).
+fn harvest_temple_end(c: &Ctx<'_>) -> End {
+    match chest_gadget_time(
+        c,
+        ei_data::species_ids::positions::GRAND_STRIKE_CHEST_HARVEST_TEMPLE_POSITION,
+        2,
+    ) {
+        Some(time) => End {
+            success: true,
+            time,
+        },
+        None => End {
+            success: false,
+            time: c.kept.log_end_time,
+        },
     }
 }
 
@@ -1536,6 +1556,8 @@ pub fn log_end_detail(
             minister_li_end(&c, player_addresses)
                 .unwrap_or_else(|| generic_end(&c, &target, player_addresses))
         }
+        // Harvest Temple: the chest, else a failure at the end of the log
+        43_488 | 24_375 => harvest_temple_end(&c),
         // `Deimos.HandleDeimosAndItsGadgets` stretches the target to the end of the log (the 10 %
         // body struct is merged into it); the rules of the merged struct are not ported
         species::target_id::DEIMOS => generic_end(
