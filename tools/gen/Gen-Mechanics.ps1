@@ -26,7 +26,12 @@ $kinds = @{
     'PlayerSrcHealthDamageHitMechanic' = 'PlayerSrcHit'
     'PlayerCastStartMechanic' = 'PlayerCastStart'
     'PlayerSrcBuffApplyMechanic' = 'PlayerSrcBuffApply'
+    'PlayerDstEffectMechanic' = 'PlayerDstEffect'
+    'PlayerSrcEffectMechanic' = 'PlayerSrcEffect'
+    'EnemySrcEffectMechanic' = 'EnemySrcEffect'
 }
+# the effect mechanics list GUIDs instead of ids and are only enabled by effect data
+$effectKinds = @('PlayerDstEffect', 'PlayerSrcEffect', 'EnemySrcEffect')
 # the filters each kind can evaluate ('dur' stands for the duration comparisons)
 $allowed = @{
     'PlayerDstHit' = @('', 'nostab', 'damage', 'species')
@@ -42,6 +47,9 @@ $allowed = @{
     'EnemyCastEnd' = @('', 'dur', 'interrupted', 'notinterrupted')
     'EnemyDstBuffApply' = @('', 'species', 'speciesbuff')
     'Achievement' = @('lost', 'kept')
+    'PlayerDstEffect' = @('')
+    'PlayerSrcEffect' = @('')
+    'EnemySrcEffect' = @('')
 }
 $filterOf = @{}
 foreach ($f in (Import-Csv -Delimiter "`t" -LiteralPath $Filters -Encoding UTF8)) {
@@ -104,6 +112,12 @@ L '    /// The start of an animated cast of one of the skills by a player (`Play
 L '    PlayerCastStart,'
 L '    /// One of the buffs a player applied (`PlayerSrcBuffApplyMechanic`).'
 L '    PlayerSrcBuffApply,'
+L '    /// An effect located at a player (`PlayerDstEffectMechanic`).'
+L '    PlayerDstEffect,'
+L '    /// An effect a player created (`PlayerSrcEffectMechanic`).'
+L '    PlayerSrcEffect,'
+L '    /// An effect an enemy or the environment created (`EnemySrcEffectMechanic`).'
+L '    EnemySrcEffect,'
 L '}'
 L ''
 L '/// The agent of the event whose species is checked.'
@@ -174,6 +188,8 @@ L '    /// The check the mechanic adds.'
 L '    pub filter: Filter,'
 L '    /// Skill or buff ids.'
 L '    pub ids: &''static [i64],'
+L '    /// GUIDs of the effects (effect mechanics only), as in `effect_guids`.'
+L '    pub guids: &''static [[u8; 16]],'
 L '    /// Short name, as in the JSON.'
 L '    pub name: &''static str,'
 L '    /// First and last (exclusive) GW2 build the mechanic is available in.'
@@ -187,8 +203,11 @@ L 'pub const MECHANICS: &[Mechanic] = &['
 $n = 0
 foreach ($r in ($rows | Sort-Object { [int]$_.Trigger })) {
     if (-not $kinds.ContainsKey($r.Type)) { continue }
-    if ($r.Subs -ne '0' -or $r.Clamper -ne '0' -or $r.Enables -ne '0' -or $r.Minions -ne '0' -or $r.Ignored -ne '0') { continue }
     $kind = $kinds[$r.Type]
+    $isEffect = $effectKinds -contains $kind
+    # an effect mechanic's only condition is that the log has effect data
+    $enables = if ($isEffect) { '1' } else { '0' }
+    if ($r.Subs -ne '0' -or $r.Clamper -ne '0' -or $r.Enables -ne $enables -or $r.Minions -ne '0' -or $r.Ignored -ne '0') { continue }
     $code = ''
     if ($r.Checkers -ne '0') {
         if ($r.Checkers -ne '1') { continue }
@@ -200,7 +219,17 @@ foreach ($r in ($rows | Sort-Object { [int]$_.Trigger })) {
     # negative ids are gadget interactions and emotes, no animated casts
     if ($kind -eq 'PlayerCastStart' -and $r.Ids -match '-') { continue }
     $name = $r.Short.Replace('\', '\\').Replace('"', '\"')
-    L ("    Mechanic {{ trigger_id: {0}, kind: Kind::{1}, filter: {8}, ids: &[{2}], name: ""{3}"", builds: ({4}, {5}), evtc_builds: ({6}, {7}) }}," -f $r.Trigger, $kind, $r.Ids, $name, $r.MinBuild, $r.MaxBuild, $r.MinEvtc, $r.MaxEvtc, (Get-FilterExpr $code))
+    $ids = $r.Ids
+    $guids = ''
+    if ($isEffect) {
+        # the 16 bytes in reading order of the 32 hex digits, as in ei-data's effect_guids
+        $guids = (($r.Ids -split ',') | ForEach-Object {
+            $hex = $_.Replace('-', '')
+            '[' + ((0..15 | ForEach-Object { '0x' + $hex.Substring(2 * $_, 2).ToUpper() }) -join ', ') + ']'
+        }) -join ', '
+        $ids = ''
+    }
+    L ("    Mechanic {{ trigger_id: {0}, kind: Kind::{1}, filter: {8}, ids: &[{2}], guids: &[{9}], name: ""{3}"", builds: ({4}, {5}), evtc_builds: ({6}, {7}) }}," -f $r.Trigger, $kind, $ids, $name, $r.MinBuild, $r.MaxBuild, $r.MinEvtc, $r.MaxEvtc, (Get-FilterExpr $code), $guids)
     $n++
 }
 L '];'

@@ -571,24 +571,12 @@ pub fn encounter_mechanics(
     fight: Fight,
     buffs: &dyn Fn(u64, i64) -> Vec<(i64, i64)>,
 ) -> Vec<MechanicRow> {
-    use ei_data::mechanics::{Kind, MECHANICS};
+    use ei_data::mechanics::Kind;
     let Fight {
         offset, duration, ..
     } = fight;
     let trigger_id = i32::from(kept.trigger_id);
-    let defs: Vec<_> = MECHANICS
-        .iter()
-        .filter(|m| m.trigger_id == trigger_id)
-        .filter(|m| m.kind != Kind::Achievement || achievement_rule(trigger_id, m.ids[0]).is_some())
-        .filter(|m| {
-            let (min, max) = m.builds;
-            let (min_evtc, max_evtc) = m.evtc_builds;
-            kept.gw2_build < max
-                && kept.gw2_build >= min
-                && kept.version.build < max_evtc
-                && kept.version.build >= min_evtc
-        })
-        .collect();
+    let defs = mechanics_of_log(kept);
     if defs.is_empty() {
         return Vec::new();
     }
@@ -601,31 +589,34 @@ pub fn encounter_mechanics(
             .position(|p| p.address == redirect(address))
             .filter(|&i| active[i])
     };
-    // the times an agent has a buff, asked for from the simulation once
-    let cache = std::cell::RefCell::new(BuffTimes::new());
-    let has_buff = |address: u64, buff: i64, time: i64| {
-        cache
-            .borrow_mut()
-            .entry((address, buff))
-            .or_insert_with(|| buffs(address, buff))
-            .iter()
-            .any(|&(start, end)| start <= time && time < end)
-    };
+    let buff_times = BuffLookup::new(buffs);
+    let has_buff = |address: u64, buff: i64, time: i64| buff_times.has(address, buff, time);
     let achievements = achievement_events(kept, players, &spans, &active, fight, trigger_id, &defs);
     let enemy_names = enemy_names(kept, table, targets, offset);
     let species = species_of_agents(table, &enemy_names);
-    let casts = if defs.iter().any(|m| {
-        matches!(
-            m.kind,
-            Kind::EnemyCastStart | Kind::EnemyCastEnd | Kind::PlayerCastStart
-        )
-    }) {
+    let uses = |kinds: &[Kind]| defs.iter().any(|m| kinds.contains(&m.kind));
+    let casts = if uses(&[
+        Kind::EnemyCastStart,
+        Kind::EnemyCastEnd,
+        Kind::PlayerCastStart,
+    ]) {
         all_casts(kept, players, &enemy_names)
+    } else {
+        Vec::new()
+    };
+    let effects = if uses(&[
+        Kind::PlayerDstEffect,
+        Kind::PlayerSrcEffect,
+        Kind::EnemySrcEffect,
+    ]) {
+        effect_records(kept)
     } else {
         Vec::new()
     };
     let lookup = Lookup {
         names: &enemy_names,
+        effects: &effects,
+        table,
         casts: &casts,
         species: &species,
         has_buff: &has_buff,
@@ -648,6 +639,11 @@ pub fn encounter_mechanics(
                 ),
                 enemies: Vec::new(),
             },
+            Kind::PlayerDstEffect | Kind::PlayerSrcEffect => MechanicRow {
+                name: m.name,
+                events: player_effect_events(m, &effects, fight, &index_of),
+                enemies: Vec::new(),
+            },
             Kind::PlayerSrcHit | Kind::PlayerCastStart | Kind::PlayerSrcBuffApply => MechanicRow {
                 name: m.name,
                 events: player_source_events(kept, m, fight, &casts, &species, &index_of),
@@ -662,12 +658,56 @@ pub fn encounter_mechanics(
             | Kind::EnemyDstBuffRemove
             | Kind::EnemyCastStart
             | Kind::EnemyCastEnd
+            | Kind::EnemySrcEffect
             | Kind::Spawn => MechanicRow {
                 name: m.name,
                 events: Vec::new(),
                 enemies: enemy_events(kept, table, m, fight, &lookup),
             },
         })
+        .collect()
+}
+
+/// The mechanics of the logic of the log that are available in its builds.
+fn mechanics_of_log(kept: &Kept) -> Vec<&'static ei_data::mechanics::Mechanic> {
+    let trigger_id = i32::from(kept.trigger_id);
+    ei_data::mechanics::MECHANICS
+        .iter()
+        .filter(|m| m.trigger_id == trigger_id)
+        .filter(|m| {
+            m.kind != ei_data::mechanics::Kind::Achievement
+                || achievement_rule(trigger_id, m.ids[0]).is_some()
+        })
+        .filter(|m| {
+            let (min, max) = m.builds;
+            let (min_evtc, max_evtc) = m.evtc_builds;
+            kept.gw2_build < max
+                && kept.gw2_build >= min
+                && kept.version.build < max_evtc
+                && kept.version.build >= min_evtc
+        })
+        .collect()
+}
+
+/// The events of the effect mechanics on players: effects located at a player or created by one.
+fn player_effect_events(
+    m: &ei_data::mechanics::Mechanic,
+    effects: &[Effect],
+    fight: Fight,
+    index_of: &dyn Fn(u64) -> Option<usize>,
+) -> Vec<(i64, usize)> {
+    effects
+        .iter()
+        .filter(|f| m.guids.contains(&f.guid))
+        .filter_map(|f| {
+            let agent = if m.kind == ei_data::mechanics::Kind::PlayerDstEffect {
+                f.dst?
+            } else {
+                f.src
+            };
+            Some((f.time - fight.offset, index_of(agent)?))
+        })
+        .filter(|(time, _)| (0..=fight.duration).contains(time))
         .collect()
 }
 
@@ -688,11 +728,86 @@ fn achievement_row(
         .unwrap_or_default()
 }
 
+/// An effect record: when it starts, who created it, the agent it is located at (if it follows
+/// one) and which effect it is.
+struct Effect {
+    time: i64,
+    src: u64,
+    dst: Option<u64>,
+    guid: [u8; 16],
+}
+
+/// The effects of the log (`EffectEvent`s): the records that start an effect, with the GUID the
+/// log assigns to the effect id. Effects on a moving platform are dropped like in C#.
+fn effect_records(kept: &Kept) -> Vec<Effect> {
+    let guids: HashMap<u32, [u8; 16]> = kept
+        .events
+        .iter()
+        .filter(|e| e.state_change == sc::ID_TO_GUID)
+        .map(|e| (e.skill_id, crate::encounter::record_guid(e)))
+        .collect();
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    kept.events
+        .iter()
+        .filter_map(|e| {
+            let around = (e.dst_agent != 0).then(|| redirect(e.dst_agent));
+            let (platform, dst) = match e.state_change {
+                sc::EFFECT_45 => (false, around),
+                sc::EFFECT_51 => (e.is_flanking > 0, around),
+                sc::EFFECT_GROUND_CREATE => (e.is_flanking > 0, None),
+                sc::EFFECT_AGENT_CREATE => (false, Some(redirect(e.dst_agent))),
+                _ => return None,
+            };
+            if platform || e.skill_id == 0 {
+                return None;
+            }
+            Some(Effect {
+                time: e.time,
+                src: redirect(e.src_agent),
+                dst,
+                guid: *guids.get(&e.skill_id)?,
+            })
+        })
+        .collect()
+}
+
+/// Name `FindActor` gives the environment, which effects without an agent belong to.
+const ENVIRONMENT: &str = "Environment";
+
 /// The times (start, end) an agent has a buff, by agent address and buff id.
 type BuffTimes = HashMap<(u64, i64), Vec<(i64, i64)>>;
 
+/// The times an agent has a buff, asked for from the simulation once.
+struct BuffLookup<'a> {
+    buffs: &'a dyn Fn(u64, i64) -> Vec<(i64, i64)>,
+    cache: std::cell::RefCell<BuffTimes>,
+}
+
+impl<'a> BuffLookup<'a> {
+    fn new(buffs: &'a dyn Fn(u64, i64) -> Vec<(i64, i64)>) -> Self {
+        Self {
+            buffs,
+            cache: std::cell::RefCell::default(),
+        }
+    }
+
+    /// Whether the agent has the buff at the time.
+    fn has(&self, address: u64, buff: i64, time: i64) -> bool {
+        self.cache
+            .borrow_mut()
+            .entry((address, buff))
+            .or_insert_with(|| (self.buffs)(address, buff))
+            .iter()
+            .any(|&(start, end)| start <= time && time < end)
+    }
+}
+
 /// What the mechanics on enemies look up.
 struct Lookup<'a> {
+    /// The effect records.
+    effects: &'a [Effect],
+    /// The agents, to tell the ones without a name.
+    table: evtc_ingest::AgentTable<'a>,
     /// Name of each enemy agent.
     names: &'a HashMap<u64, String>,
     /// The animated casts.
@@ -812,6 +927,8 @@ fn enemy_events(
 ) -> Vec<(i64, String)> {
     use ei_data::mechanics::Kind;
     let Lookup {
+        effects,
+        table: agents,
         names,
         casts,
         species,
@@ -824,6 +941,22 @@ fn enemy_events(
             .flat_map(|&id| crate::encounter::species_first_seen(kept, table, id))
             .filter_map(|(address, first)| {
                 Some((first - fight.offset, names.get(&address)?.clone()))
+            })
+            .collect()
+    } else if m.kind == Kind::EnemySrcEffect {
+        effects
+            .iter()
+            .filter(|f| m.guids.contains(&f.guid))
+            .filter_map(|f| {
+                let name = names.get(&f.src).cloned().or_else(|| {
+                    // agents without a name stand for the environment
+                    let unnamed = agents
+                        .iter()
+                        .find(|a| a.address() == f.src)
+                        .is_none_or(|a| a.name().starts_with(' ') || a.name().is_empty());
+                    unnamed.then(|| ENVIRONMENT.to_owned())
+                })?;
+                Some((f.time - fight.offset, name))
             })
             .collect()
     } else if matches!(m.kind, Kind::EnemyDstBuffApply | Kind::EnemyDstBuffRemove) {

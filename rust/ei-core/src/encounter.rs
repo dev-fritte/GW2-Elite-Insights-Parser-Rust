@@ -800,7 +800,7 @@ fn bandit_trio_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
 }
 
 /// The GUID an `ID_TO_GUID` record carries, in the byte order of `effect_guids`.
-fn record_guid(e: &evtc_ingest::CombatRecord) -> [u8; 16] {
+pub(crate) fn record_guid(e: &evtc_ingest::CombatRecord) -> [u8; 16] {
     let mut bytes = [0u8; 16];
     bytes[..8].copy_from_slice(&e.src_agent.to_le_bytes());
     bytes[8..].copy_from_slice(&e.dst_agent.to_le_bytes());
