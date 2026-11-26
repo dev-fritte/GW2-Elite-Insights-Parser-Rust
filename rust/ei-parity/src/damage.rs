@@ -30,6 +30,7 @@ pub fn compare_log(
     let timing = crate::buffs::reference_timing(reference);
     let analysis = analyze_damage(data, api, timing).map_err(|e| e.to_string())?;
     let duration = analysis.duration;
+    compare_mechanics(&analysis, reference, label, stats);
     let players = &analysis.players;
     let theirs_all = reference
         .get("players")
@@ -544,5 +545,160 @@ fn compare_graphs(
             .and_then(|v| v.get(0));
         let note = || format!("{} target {index}", note());
         check_graph(stats, "graph target", graph, reference, &note);
+    }
+}
+
+/// Compares the mechanics every encounter has: for each of them the sorted times and players.
+/// Counts a mechanic of enemies whose times agree with the reference but whose names do not.
+fn note_enemy_names(
+    stats: &mut BTreeMap<&'static str, DamageStats>,
+    label: &str,
+    name: &str,
+    ours: &[(i64, String)],
+    expected: &[(i64, String)],
+) {
+    let times = |v: &[(i64, String)]| v.iter().map(|x| x.0).collect::<Vec<_>>();
+    if ours == expected || times(ours) != times(expected) {
+        return;
+    }
+    let n = stats.entry("mechanics (enemy names)").or_default();
+    n.compared += 1;
+    n.mismatches += 1;
+    if n.examples.len() < 20 {
+        let names = |v: &[(i64, String)]| {
+            v.iter()
+                .map(|x| x.1.clone())
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        n.examples.push(format!(
+            "{label} {name}: rust {:?} reference {:?}",
+            names(ours),
+            names(expected)
+        ));
+    }
+}
+
+/// Counts the mechanics the reference lists with events that are not produced at all.
+fn note_unproduced(
+    analysis: &ei_core::pipeline::DamageAnalysis,
+    reference: &[Value],
+    generic: &[&str],
+    label: &str,
+    stats: &mut BTreeMap<&'static str, DamageStats>,
+) {
+    let produced: std::collections::BTreeSet<&str> =
+        analysis.mechanics.iter().map(|m| m.name).collect();
+    for m in reference {
+        let Some(name) = m.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let events = m
+            .get("mechanicsData")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+        if events > 0 && !generic.contains(&name) && !produced.contains(name) {
+            let s = stats.entry("mechanics (not produced)").or_default();
+            s.compared += 1;
+            s.mismatches += 1;
+            if s.examples.len() < 400 {
+                s.examples.push(format!("{label} {name}: {events} events"));
+            }
+        }
+    }
+}
+
+fn compare_mechanics(
+    analysis: &ei_core::pipeline::DamageAnalysis,
+    reference: &Value,
+    label: &str,
+    stats: &mut BTreeMap<&'static str, DamageStats>,
+) {
+    const NAMES: [&str; 14] = [
+        "Dead",
+        "Downed",
+        "Got up",
+        "DC",
+        "Resp",
+        "Res",
+        "Knck.Dwn",
+        "Knck.Pll",
+        "Flt",
+        "Lnch",
+        "Lckt",
+        "Wtr.Flt.Snk",
+        "Miss.Qck",
+        "Miss.Alac",
+    ];
+    let theirs_all = reference
+        .get("mechanics")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let encounter_names: std::collections::BTreeSet<&str> = analysis
+        .mechanics
+        .iter()
+        .map(|m| m.name)
+        .filter(|n| !NAMES.contains(n))
+        .collect();
+    note_unproduced(analysis, &theirs_all, &NAMES, label, stats);
+    for (name, key) in NAMES.into_iter().map(|n| (n, "mechanics (generic)")).chain(
+        encounter_names
+            .into_iter()
+            .map(|n| (n, "mechanics (encounter)")),
+    ) {
+        let mut expected: Vec<(i64, String)> = theirs_all
+            .iter()
+            .filter(|m| m.get("name").and_then(Value::as_str) == Some(name))
+            .flat_map(|m| {
+                m.get("mechanicsData")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default()
+            })
+            .filter_map(|x| {
+                Some((
+                    x.get("time")?.as_i64()?,
+                    x.get("actor")?.as_str()?.to_owned(),
+                ))
+            })
+            .collect();
+        let mut ours: Vec<(i64, String)> = analysis
+            .mechanics
+            .iter()
+            .filter(|m| m.name == name)
+            .flat_map(|m| {
+                m.events
+                    .iter()
+                    .map(|&(time, player)| {
+                        (time, analysis.mechanic_players[player].character.clone())
+                    })
+                    .chain(m.enemies.iter().cloned())
+            })
+            .collect();
+        expected.sort();
+        ours.sort();
+        // enemy mechanics: C# renames enemies in single logics (not ported), so the times decide
+        // and the names are counted on their own
+        let enemy = analysis
+            .mechanics
+            .iter()
+            .any(|m| m.name == name && !m.enemies.is_empty());
+        let (key, same) = if enemy {
+            note_enemy_names(stats, label, name, &ours, &expected);
+            let times = |v: &[(i64, String)]| v.iter().map(|x| x.0).collect::<Vec<_>>();
+            ("mechanics (enemy)", times(&ours) == times(&expected))
+        } else {
+            (key, ours == expected)
+        };
+        let s = stats.entry(key).or_default();
+        s.compared += 1;
+        if !same {
+            s.mismatches += 1;
+            if s.examples.len() < 50 {
+                s.examples.push(format!(
+                    "{label} {name}: rust {ours:?} reference {expected:?}"
+                ));
+            }
+        }
     }
 }

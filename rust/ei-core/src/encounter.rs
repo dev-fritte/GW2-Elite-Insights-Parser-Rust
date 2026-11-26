@@ -57,7 +57,7 @@ impl Agent {
 }
 
 /// First and last time of every agent address in the kept records (`UpdateAgentData`).
-fn spans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
+pub(crate) fn spans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
     let mut spans: HashMap<u64, (i64, i64)> = HashMap::new();
     let mut touch = |address: u64, time: i64| {
@@ -627,6 +627,27 @@ fn first_damage_time(c: &Ctx<'_>, target: &Agent) -> i64 {
         .map_or(target.first, |e| e.time)
 }
 
+/// `StatueOfDeath.GetLogOffset`: with a log start update the last time of the Ascalonian peasants,
+/// else the first damage event of the Eater of Souls.
+fn statue_of_death_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
+    let eater = c.agent(species::target_id::EATER_OF_SOULS)?;
+    if c.first_with(|e| e.state_change == sc::LOG_NPC_UPDATE)
+        .is_none()
+    {
+        return Ok(0);
+    }
+    let peasants = [
+        species::target_id::ASCALONIAN_PEASANT1,
+        species::target_id::ASCALONIAN_PEASANT2,
+    ]
+    .into_iter()
+    .filter_map(|id| u32::try_from(id).ok())
+    .flat_map(|id| species_agents(c.table, c.spans, id))
+    .map(|a| a.last)
+    .max();
+    Ok(peasants.unwrap_or_else(|| first_damage_time(c, &eater)))
+}
+
 /// `StatueOfIce.GetLogOffset`: the first cast of the Broken King.
 fn broken_king_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
     let king = c.agent(species::target_id::BROKEN_KING)?;
@@ -873,6 +894,7 @@ fn rule_for(trigger_id: u16) -> Option<Rule> {
         27124 => kela_offset,
         id::VLOXX => vloxx_offset,
         id::BROKEN_KING => broken_king_offset,
+        id::EATER_OF_SOULS => statue_of_death_offset,
         id::QADIM => qadim_offset,
         id::PROTOTYPE_VERMILION | id::PROTOTYPE_VERMILION_CM => old_lions_court_offset,
         id::ETHEREAL_BARRIER_GADGET => spirit_race_offset,
@@ -942,7 +964,7 @@ fn chest_position(trigger_id: u16) -> Option<[f32; 3]> {
 
 /// `FindChestGadgets`: the gadget that stands at the chest position, never moves and has the
 /// chest hitbox. Returns the first time the gadget is known (`SetSuccessByChestGadget`).
-fn chest_gadget_time(c: &Ctx<'_>, position: [f32; 3]) -> Option<i64> {
+fn chest_gadget_time(c: &Ctx<'_>, position: [f32; 3], hitbox_width: u32) -> Option<i64> {
     // `InchDistanceThresholdSquared`
     const THRESHOLD_SQUARED: f32 = std::f32::consts::SQRT_2 * std::f32::consts::SQRT_2;
     let xy = |dst: u64| {
@@ -955,7 +977,7 @@ fn chest_gadget_time(c: &Ctx<'_>, position: [f32; 3]) -> Option<i64> {
     let gadgets: Vec<Agent> = c
         .table
         .iter()
-        .filter(|a| agent_kind(*a) == AgentKind::Gadget && a.hitbox_width() == 100)
+        .filter(|a| agent_kind(*a) == AgentKind::Gadget && a.hitbox_width() == hitbox_width)
         .filter_map(|a| {
             c.spans.get(&a.address()).map(|&(first, last)| Agent {
                 address: a.address(),
@@ -1038,7 +1060,7 @@ fn generic_end(c: &Ctx<'_>, target: &Agent, player_addresses: &[u64]) -> End {
         };
     }
     if let Some(position) = chest_position(kept.trigger_id)
-        && let Some(time) = chest_gadget_time(c, position)
+        && let Some(time) = chest_gadget_time(c, position, 100)
     {
         return End {
             success: true,
@@ -1068,6 +1090,26 @@ fn generic_end(c: &Ctx<'_>, target: &Agent, player_addresses: &[u64]) -> End {
     End {
         success: false,
         time: target.last,
+    }
+}
+
+/// `HarvestTemple.CheckSuccess`: the grand strike chest gadget ends the fight; without it the
+/// fight fails at the last time of the targets, which the logic stretches to the end of the log.
+/// Not ported: the delayed reward through the targetable state of Soo-Won (no chest in the log).
+fn harvest_temple_end(c: &Ctx<'_>) -> End {
+    match chest_gadget_time(
+        c,
+        ei_data::species_ids::positions::GRAND_STRIKE_CHEST_HARVEST_TEMPLE_POSITION,
+        2,
+    ) {
+        Some(time) => End {
+            success: true,
+            time,
+        },
+        None => End {
+            success: false,
+            time: c.kept.log_end_time,
+        },
     }
 }
 
@@ -1379,6 +1421,27 @@ fn statue_of_darkness_end(c: &Ctx<'_>, fate: &Agent, player_addresses: &[u64]) -
     }
 }
 
+/// `SingleActor.GetHealth` of the agent at `address`.
+#[must_use]
+pub fn target_health(kept: &Kept, table: AgentTable<'_>, address: u64) -> Option<u64> {
+    let spans = spans(kept);
+    let c = Ctx {
+        kept,
+        table,
+        spans: &spans,
+        offset: 0,
+    };
+    let &(first, last) = spans.get(&address)?;
+    actor_health(
+        &c,
+        &Agent {
+            address,
+            first,
+            last,
+        },
+    )
+}
+
 /// `SingleActor.GetHealth`: the maximum health the agent has around the middle of its time (or
 /// shortly before its last hit).
 fn actor_health(c: &Ctx<'_>, agent: &Agent) -> Option<u64> {
@@ -1476,6 +1539,19 @@ pub fn log_end(
     player_addresses: &[u64],
     offset: i64,
 ) -> Result<i64, MissingKeyActors> {
+    log_end_detail(kept, table, player_addresses, offset).map(|(time, _)| time)
+}
+
+/// The end of the fight like [`log_end`] and whether the encounter succeeded.
+///
+/// # Errors
+/// [`MissingKeyActors`] if the main target is not in the log.
+pub fn log_end_detail(
+    kept: &Kept,
+    table: AgentTable<'_>,
+    player_addresses: &[u64],
+    offset: i64,
+) -> Result<(i64, bool), MissingKeyActors> {
     let spans = spans(kept);
     let c = Ctx {
         kept,
@@ -1486,11 +1562,14 @@ pub fn log_end(
     // the spirit race has no target to check, only the old raid reward
     if i32::from(kept.trigger_id) == species::target_id::ETHEREAL_BARRIER_GADGET {
         let end = twisted_castle_end(&c, offset);
-        return Ok(if end.success {
-            (end.time + SERVER_DELAY).min(kept.log_end_time)
-        } else {
-            end.time
-        });
+        return Ok((
+            if end.success {
+                (end.time + SERVER_DELAY).min(kept.log_end_time)
+            } else {
+                end.time
+            },
+            end.success,
+        ));
     }
     let target = c.agent(i32::from(kept.trigger_id))?;
     let end = match i32::from(kept.trigger_id) {
@@ -1499,6 +1578,18 @@ pub fn log_end(
             minister_li_end(&c, player_addresses)
                 .unwrap_or_else(|| generic_end(&c, &target, player_addresses))
         }
+        // Harvest Temple: the chest, else a failure at the end of the log
+        43_488 | 24_375 => harvest_temple_end(&c),
+        // `Deimos.HandleDeimosAndItsGadgets` stretches the target to the end of the log (the 10 %
+        // body struct is merged into it); the rules of the merged struct are not ported
+        species::target_id::DEIMOS => generic_end(
+            &c,
+            &Agent {
+                last: kept.log_end_time,
+                ..target
+            },
+            player_addresses,
+        ),
         species::target_id::KANAXAI_SCYTHE_OF_HOUSE_AURKUS_CM => kanaxai_end(&c, &target),
         species::target_id::PROTOTYPE_VERMILION | species::target_id::PROTOTYPE_VERMILION_CM => {
             old_lions_court_end(&c, &target, player_addresses)
@@ -1515,11 +1606,68 @@ pub fn log_end(
         }
         _ => generic_end(&c, &target, player_addresses),
     };
-    Ok(if end.success {
-        (end.time + SERVER_DELAY).min(kept.log_end_time)
-    } else {
-        end.time
-    })
+    Ok((
+        if end.success {
+            (end.time + SERVER_DELAY).min(kept.log_end_time)
+        } else {
+            end.time
+        },
+        end.success,
+    ))
+}
+
+/// Whether the log is a challenge mode, for the logics whose mode the achievements depend on
+/// (`GetLogMode` of Kaineng Overlook, Cosmic Observatory, Temple of Febe, Greer and Decima).
+#[must_use]
+pub fn challenge_mode(kept: &Kept, table: AgentTable<'_>) -> bool {
+    /// `GW2Builds.DagdaNMHPChangedAndCMRelease`.
+    const DAGDA_CM_RELEASE: u64 = 153_978;
+    let spans = spans(kept);
+    let c = Ctx {
+        kept,
+        table,
+        spans: &spans,
+        offset: 0,
+    };
+    let health = |id: i32| c.agent(id).ok().and_then(|agent| actor_health(&c, &agent));
+    match i32::from(kept.trigger_id) {
+        species::target_id::MINISTER_LI_CM => true,
+        24_485 => c.agent(species::target_id::MINISTER_LI_CM).is_ok(),
+        species::target_id::GREER => c.agent(species::target_id::EREG).is_ok(),
+        species::target_id::DECIMA_CM => true,
+        species::target_id::ANKKA => {
+            health(species::target_id::ANKKA).is_some_and(|hp| hp > 40_000_000)
+        }
+        // Cerus of the Temple of Febe: challenge or legendary challenge mode
+        species::target_id::CERUS => {
+            health(species::target_id::CERUS).is_some_and(|hp| hp > 80_000_000)
+        }
+        species::target_id::DAGDA => {
+            let Ok(dagda) = c.agent(species::target_id::DAGDA) else {
+                return false;
+            };
+            if kept.gw2_build < DAGDA_CM_RELEASE
+                || actor_health(&c, &dagda).is_none_or(|hp| hp <= 50_000_000)
+            {
+                return false;
+            }
+            // the demonic aura was removed but the timer never applied: not a true challenge mode
+            let removed = c.kept.events.iter().any(|e| {
+                e.state_change == sc::BUFF_REMOVE_ALL
+                    && i64::from(e.skill_id) == skill::DAGDA_DEMONIC_AURA
+                    && e.src_agent != 0
+                    && c.redirect(e.src_agent) == dagda.address
+            });
+            let timer = c.kept.events.iter().any(|e| {
+                matches!(e.state_change, sc::BUFF_APPLY | sc::BUFF_INITIAL)
+                    && i64::from(e.skill_id) == skill::DAGDA_DEMONIC_AURA_TIMER
+                    && e.dst_agent != 0
+                    && c.redirect(e.dst_agent) == dagda.address
+            });
+            !removed || timer
+        }
+        _ => false,
+    }
 }
 
 /// Files a regrouped group of agents: a single agent keeps its place, a merged one is new.
@@ -1548,6 +1696,342 @@ pub struct Target {
     pub first: i64,
     /// Last time of the agent, with the offset applied.
     pub last: i64,
+}
+
+/// Agents of the species of the encounter that its logic sets to `IgnoredSpecies` or to a species
+/// that is no target: the fake Ensolysses (`Ensolyss.IgnoreFakeEnsolysses`), the dummy Eparchs
+/// (`Eparch.EIEvtcParse`) and the flux anomalies of Skorvald that gain determined
+/// (`Skorvald.DetectUnknownAnomalies`).
+fn ignored_agent(kept: &Kept, address: u64, species: i32) -> bool {
+    use species::target_id as id;
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    let of_agent =
+        |e: &evtc_ingest::CombatRecord| e.src_agent != 0 && redirect(e.src_agent) == address;
+    match (i32::from(kept.trigger_id), species) {
+        (t, s) if t == id::ENSOLYSS && s == id::ENSOLYSS => {
+            // only agents that ever had at least 7 million health are Ensolyss
+            !kept.events.iter().any(|e| {
+                e.state_change == sc::MAX_HEALTH_UPDATE && of_agent(e) && e.dst_agent >= 7_000_000
+            })
+        }
+        (t, s) if t == id::EPARCH_LONELY_TOWER && s == id::EPARCH_LONELY_TOWER => {
+            // an Eparch that never casts (apart from drawing and stowing the weapon) is a dummy
+            !kept.events.iter().any(|e| {
+                e.state_change == sc::ANIMATION_START
+                    && of_agent(e)
+                    && !matches!(
+                        i64::from(e.skill_id),
+                        skill::WEAPON_DRAW | skill::WEAPON_STOW
+                    )
+            })
+        }
+        (t, s) if t == id::SKORVALD && FLUX_ANOMALIES.contains(&s) => kept.events.iter().any(|e| {
+            e.state_change == sc::BUFF_APPLY
+                && i64::from(e.skill_id) == skill::DETERMINED762
+                && e.dst_agent != 0
+                && redirect(e.dst_agent) == address
+        }),
+        (t, s) if t == id::QADIM && s == id::PYRE_GUARDIAN => qadim_pyre_is_known(kept, address),
+        _ => false,
+    }
+}
+
+/// `Qadim.FindPyres`: a pyre guardian at one of the known positions gets its own species, so it
+/// is no longer one of the plain pyre guardians.
+fn qadim_pyre_is_known(kept: &Kept, address: u64) -> bool {
+    const POSITIONS: [(f32, f32); 8] = [
+        (-8947.0, 14728.0),
+        (-10834.0, 12477.0),
+        (-4356.0, 12076.0),
+        (-5889.0, 14723.0),
+        (-7851.0, 13550.0),
+        (-8951.0, 9429.0),
+        (-5716.0, 9325.0),
+        (-7846.0, 10612.0),
+    ];
+    /// `ParserHelper.InchDistanceThresholdSquared`.
+    const THRESHOLD_SQUARED: f32 = std::f32::consts::SQRT_2 * std::f32::consts::SQRT_2;
+    kept.events
+        .iter()
+        .find(|e| {
+            e.state_change == sc::POSITION
+                && e.src_agent != 0
+                && *kept
+                    .agent_redirection
+                    .get(&e.src_agent)
+                    .unwrap_or(&e.src_agent)
+                    == address
+        })
+        .is_some_and(|e| {
+            let x = f32::from_bits((e.dst_agent & 0xFFFF_FFFF) as u32);
+            let y = f32::from_bits((e.dst_agent >> 32) as u32);
+            POSITIONS
+                .iter()
+                .any(|&(px, py)| (px - x).powi(2) + (py - y).powi(2) < THRESHOLD_SQUARED)
+        })
+}
+
+/// The flux anomalies of Skorvald.
+const FLUX_ANOMALIES: [i32; 8] = [
+    17_578, 17_929, 17_695, 17_651, 17_599, 17_770, 17_851, 17_673,
+];
+
+/// The lamps of Qadim (`Qadim.FindLamps`): the gadgets that carry the lamp marker, as targets of the
+/// volatile species `QadimLamp`.
+#[must_use]
+pub fn qadim_lamps(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Target> {
+    let Some(marker) = kept.events.iter().find(|e| {
+        e.state_change == sc::ID_TO_GUID
+            && record_guid(e) == ei_data::marker_guids::QADIM_LAMP_MARKER
+    }) else {
+        return Vec::new();
+    };
+    let spans = spans(kept);
+    let mut addresses: Vec<u64> = Vec::new();
+    for e in &kept.events {
+        if e.state_change == sc::MARKER
+            && i64::from(e.value) == i64::from(marker.skill_id)
+            && e.src_agent != 0
+        {
+            let address = *kept
+                .agent_redirection
+                .get(&e.src_agent)
+                .unwrap_or(&e.src_agent);
+            if !addresses.contains(&address) {
+                addresses.push(address);
+            }
+        }
+    }
+    addresses
+        .into_iter()
+        .filter(|a| {
+            table
+                .iter()
+                .any(|x| x.address() == *a && agent_kind(x) == AgentKind::Gadget)
+        })
+        .filter_map(|a| {
+            let &(first, last) = spans.get(&a)?;
+            Some(Target {
+                address: a,
+                addresses: vec![a],
+                species: species::target_id::QADIM_LAMP,
+                first: first - offset,
+                last: last - offset,
+            })
+        })
+        .collect()
+}
+
+/// The intervals in which an attack target is targetable, with the agent that owns it
+/// (`AttackTargetEvent.GetTargetableEvents`): (owner, attack target, start, end). Times have the
+/// offset applied.
+fn targetable_intervals(kept: &Kept, offset: i64) -> Vec<(u64, u64, i64, i64)> {
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    let mut out = Vec::new();
+    let mut seen: Vec<u64> = Vec::new();
+    for e in kept
+        .events
+        .iter()
+        .filter(|e| e.state_change == sc::ATTACK_TARGET)
+    {
+        // one end of the record is the attack target (it has most targetable records), the
+        // other the gadget it belongs to
+        let toggles = |a: u64| {
+            kept.events
+                .iter()
+                .filter(|t| t.state_change == sc::TARGETABLE && redirect(t.src_agent) == a)
+                .count()
+        };
+        let (owner, target) = if toggles(redirect(e.dst_agent)) >= toggles(redirect(e.src_agent)) {
+            (redirect(e.src_agent), redirect(e.dst_agent))
+        } else {
+            (redirect(e.dst_agent), redirect(e.src_agent))
+        };
+        if seen.contains(&target) {
+            continue;
+        }
+        let changes: Vec<(i64, bool)> = kept
+            .events
+            .iter()
+            .filter(|t| t.state_change == sc::TARGETABLE && redirect(t.src_agent) == target)
+            .map(|t| (t.time - offset, t.dst_agent == 1))
+            .collect();
+        if !changes.iter().any(|c| c.1) {
+            continue;
+        }
+        seen.push(target);
+        for (i, &(start, on)) in changes.iter().enumerate() {
+            if !on {
+                continue;
+            }
+            let end = changes[i + 1..]
+                .iter()
+                .find(|c| !c.1 && c.0 > start)
+                .map_or(kept.log_end_time - offset, |c| c.0);
+            out.push((owner, target, start, end));
+        }
+    }
+    out
+}
+
+/// The times an attack target of an agent becomes targetable (`Conjured Amalgamate` arms): the
+/// first attack target of the agent.
+#[must_use]
+pub fn attack_target_on_times(kept: &Kept, offset: i64, owners: &[u64]) -> Vec<i64> {
+    let intervals: Vec<_> = targetable_intervals(kept, offset)
+        .into_iter()
+        .filter(|(owner, ..)| owners.contains(owner))
+        .collect();
+    let Some(first) = intervals.first().map(|i| i.1) else {
+        return Vec::new();
+    };
+    intervals
+        .iter()
+        .filter(|i| i.1 == first)
+        .map(|i| i.2)
+        .collect()
+}
+
+/// The hands of Adina (`Adina.FindHands`): one agent for each time a hand can be attacked.
+#[must_use]
+pub fn adina_hands(kept: &Kept, offset: i64) -> Vec<Target> {
+    const ERUPTION: [(f32, f32); 2] = [(15_570.5, -693.117), (14_277.2, -2_202.52)];
+    const THRESHOLD_SQUARED: f32 = std::f32::consts::SQRT_2 * std::f32::consts::SQRT_2;
+    if i32::from(kept.trigger_id) != species::target_id::ADINA {
+        return Vec::new();
+    }
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    targetable_intervals(kept, offset)
+        .into_iter()
+        .map(|(hand, _, start, end)| {
+            let eruption = kept
+                .events
+                .iter()
+                .find(|e| {
+                    e.state_change == sc::POSITION
+                        && e.src_agent != 0
+                        && redirect(e.src_agent) == hand
+                })
+                .is_some_and(|e| {
+                    let x = f32::from_bits((e.dst_agent & 0xFFFF_FFFF) as u32);
+                    let y = f32::from_bits((e.dst_agent >> 32) as u32);
+                    ERUPTION
+                        .iter()
+                        .any(|&(px, py)| (px - x).powi(2) + (py - y).powi(2) < THRESHOLD_SQUARED)
+                });
+            // the new agent is only known from its first to its last record inside the interval
+            let times: Vec<i64> = kept
+                .events
+                .iter()
+                .filter(|e| e.src_agent != 0 && redirect(e.src_agent) == hand)
+                .map(|e| e.time - offset)
+                .filter(|t| (start..=end).contains(t))
+                .collect();
+            let first = times.iter().copied().min().unwrap_or(start);
+            let last = times.iter().copied().max().unwrap_or(end);
+            Target {
+                address: hand,
+                addresses: vec![hand],
+                species: if eruption {
+                    species::target_id::HAND_OF_ERUPTION
+                } else {
+                    species::target_id::HAND_OF_EROSION
+                },
+                first,
+                last,
+            }
+        })
+        .collect()
+}
+
+/// The agents of a species with the first time of each (offset not applied), ordered by it.
+#[must_use]
+pub(crate) fn species_first_seen(kept: &Kept, table: AgentTable<'_>, id: i64) -> Vec<(u64, i64)> {
+    let spans = spans(kept);
+    u32::try_from(id)
+        .map(|id| {
+            species_agents(table, &spans, id)
+                .into_iter()
+                .map(|a| (a.address, a.first))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The species of every non player character and gadget by address.
+#[must_use]
+pub(crate) fn species_by_address(table: AgentTable<'_>) -> HashMap<u64, u32> {
+    table
+        .iter()
+        .filter_map(|a| match agent_kind(a) {
+            AgentKind::Npc => Some((a.address(), a.profession())),
+            AgentKind::Gadget => Some((a.address(), a.profession() & 0xFFFF)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The addresses of the agents of the trash mob species of the logic (`LogLogic.TrashMobs`).
+#[must_use]
+pub(crate) fn trash_addresses(kept: &Kept, table: AgentTable<'_>) -> Vec<u64> {
+    let Some(logic) = ei_data::targets::logic(i32::from(kept.trigger_id)) else {
+        return Vec::new();
+    };
+    let spans = spans(kept);
+    logic
+        .trash
+        .iter()
+        .filter_map(|&id| u32::try_from(id).ok())
+        .flat_map(|id| species_agents(table, &spans, id))
+        .map(|a| a.address)
+        .collect()
+}
+
+/// The agents of some species as (first, last, end) with the offset applied, ordered by first
+/// appearance; the end is the last death of the agent if it has one, else its last time.
+#[must_use]
+pub fn species_lifetimes(
+    kept: &Kept,
+    table: AgentTable<'_>,
+    offset: i64,
+    ids: &[u32],
+) -> Vec<(i64, i64, i64)> {
+    let spans = spans(kept);
+    let mut out: Vec<(i64, i64, i64)> = Vec::new();
+    for &id in ids {
+        for agent in species_agents(table, &spans, id) {
+            let death = kept
+                .events
+                .iter()
+                .rev()
+                .find(|e| {
+                    e.state_change == sc::CHANGE_DEAD
+                        && e.src_agent != 0
+                        && *kept
+                            .agent_redirection
+                            .get(&e.src_agent)
+                            .unwrap_or(&e.src_agent)
+                            == agent.address
+                })
+                .map(|e| e.time - offset);
+            out.push((
+                agent.first - offset,
+                agent.last - offset,
+                death.unwrap_or(agent.last - offset),
+            ));
+        }
+    }
+    out.sort_by_key(|o| o.0);
+    out
+}
+
+/// The first times (with the offset applied) of the agents of a species, ordered by first appearance.
+#[must_use]
+pub fn species_first_times(kept: &Kept, table: AgentTable<'_>, offset: i64, id: u32) -> Vec<i64> {
+    species_agents(table, &spans(kept), id)
+        .into_iter()
+        .map(|a| a.first - offset)
+        .collect()
 }
 
 /// The targets of the encounter: the agents of the species its logic lists, ordered by first
@@ -1633,7 +2117,7 @@ pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
         let Some(&(first, last)) = spans.get(&agent.address()) else {
             continue;
         };
-        if logic.targets.contains(&species) {
+        if logic.targets.contains(&species) && !ignored_agent(kept, agent.address(), species) {
             candidates.push((
                 Target {
                     address: agent.address(),

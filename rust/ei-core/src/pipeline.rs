@@ -259,6 +259,10 @@ pub struct DamageAnalysis {
     pub players: Vec<PlayerDamage>,
     /// The targets of the encounter.
     pub targets: Vec<crate::encounter::Target>,
+    /// The mechanics every encounter has.
+    pub mechanics: Vec<crate::mechanics::MechanicRow>,
+    /// The players the mechanics refer to.
+    pub mechanic_players: Vec<Player>,
 }
 
 /// The graphs of one player.
@@ -298,6 +302,7 @@ fn player_graphs(
 ///
 /// # Errors
 /// [`AnalysisError`] for unreadable logs or logs of unsupported arcdps builds.
+#[allow(clippy::too_many_lines)]
 pub fn analyze_damage(
     data: &[u8],
     api: &Api,
@@ -331,6 +336,43 @@ pub fn analyze_damage(
     let targets = crate::encounter::log_targets(&kept, evtc.agents(), timing.offset);
     let player_addresses: Vec<u64> = players.iter().map(|p| p.address).collect();
     let all_events: Vec<&evtc_ingest::CombatRecord> = kept.events.iter().collect();
+    let mut mechanics =
+        crate::mechanics::base_mechanics(&kept, &players, timing.offset, timing.duration);
+    mechanics.extend(crate::mechanics::encounter_mechanics(
+        &kept,
+        &players,
+        evtc.agents(),
+        &targets,
+        crate::mechanics::Fight {
+            offset: timing.offset,
+            duration: timing.duration,
+            success: crate::encounter::log_end_detail(
+                &kept,
+                evtc.agents(),
+                &players.iter().map(|p| p.address).collect::<Vec<_>>(),
+                timing.offset,
+            )
+            .is_ok_and(|(_, success)| success),
+            challenge: crate::encounter::challenge_mode(&kept, evtc.agents()),
+        },
+        &|address, buff| {
+            let kind = players.iter().find(|p| p.address == address).map_or(
+                crate::buff_events::ElementalistKind::None,
+                elementalist_kind,
+            );
+            crate::buff_events::simulate_agent(&ctx, address, kind)
+                .map(|all| {
+                    all.iter()
+                        .filter(|b| b.buff.id == buff)
+                        .flat_map(|b| b.items.iter())
+                        .filter(|i| i.active_stacks > 0)
+                        .map(|i| (i.start, i.end))
+                        .collect()
+                })
+                .unwrap_or_default()
+        },
+    ));
+    let mechanic_players = players.clone();
     let mut out = Vec::with_capacity(players.len());
     for player in players {
         let dealt = crate::offense::dealt_events(&kept, player.address);
@@ -393,6 +435,8 @@ pub fn analyze_damage(
         duration: timing.duration,
         players: out,
         targets,
+        mechanics,
+        mechanic_players,
     })
 }
 
@@ -411,6 +455,8 @@ pub struct OffsetAnalysis {
     pub targets: Vec<crate::encounter::Target>,
     /// The breakbar phases of the targets, with times relative to the start of the fight.
     pub breakbar_phases: Vec<crate::phases::BreakbarPhase>,
+    /// The sub phases of the encounter, if its logic is ported.
+    pub sub_phases: Option<Vec<crate::subphases::SubPhase>>,
 }
 
 /// Determines the encounter offset of a log.
@@ -444,6 +490,33 @@ pub fn analyze_offset(data: &[u8]) -> Result<OffsetAnalysis, AnalysisError> {
         fight_end,
         log_end: kept.log_end_time,
         trigger_id: kept.trigger_id,
+        sub_phases: crate::subphases::encounter_phases(
+            &kept,
+            &targets,
+            offset.unwrap_or(0),
+            duration,
+            &crate::subphases::Extras {
+                players: addresses.clone(),
+                tormented: crate::encounter::species_lifetimes(
+                    &kept,
+                    evtc.agents(),
+                    offset.unwrap_or(0),
+                    &[25_829, 26_000, 25_623],
+                ),
+                extra_targets: {
+                    let mut extra =
+                        crate::encounter::qadim_lamps(&kept, evtc.agents(), offset.unwrap_or(0));
+                    extra.extend(crate::encounter::adina_hands(&kept, offset.unwrap_or(0)));
+                    extra
+                },
+                pyre_starts: crate::encounter::species_first_times(
+                    &kept,
+                    evtc.agents(),
+                    offset.unwrap_or(0),
+                    21_050,
+                ),
+            },
+        ),
         breakbar_phases: crate::phases::breakbar_phases(
             &kept,
             &targets,

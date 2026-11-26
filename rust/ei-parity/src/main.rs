@@ -326,6 +326,33 @@ fn run() -> Result<bool, Box<dyn Error>> {
                 }
             }
         }
+        let sub: usize = offset_stats.values().map(|s| s.sub_ok).sum();
+        let sub_compared: usize = offset_stats.values().map(|s| s.sub_compared).sum();
+        println!("sub phases: {sub}/{sub_compared} logs identical");
+        let loose: usize = offset_stats.values().map(|s| s.loose_ok).sum();
+        let loose_compared: usize = offset_stats.values().map(|s| s.loose_compared).sum();
+        println!(
+            "sub phases (target list differs, times only): {loose}/{loose_compared} logs identical"
+        );
+        for (folder, s) in &offset_stats {
+            if s.loose_ok != s.loose_compared {
+                println!(
+                    "  {folder}: loose sub phases {}/{}",
+                    s.loose_ok, s.loose_compared
+                );
+                for e in &s.loose_examples {
+                    println!("      {e}");
+                }
+            }
+        }
+        for (folder, s) in &offset_stats {
+            if s.sub_ok != s.sub_compared {
+                println!("  {folder}: sub phases {}/{}", s.sub_ok, s.sub_compared);
+                for e in &s.sub_examples {
+                    println!("      {e}");
+                }
+            }
+        }
         if offsets != logs || durations != logs {
             all_match = false;
         }

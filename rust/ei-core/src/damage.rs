@@ -18,13 +18,13 @@ const RESULT_ENUM_REWORK_BUILD: i32 = 20_260_501;
 const BREAKBAR_DAMAGE: u8 = 10;
 
 /// `DamageResult` values of direct damage that has a health value.
-fn is_direct_hit(result: u8) -> bool {
+pub(crate) fn is_direct_hit(result: u8) -> bool {
     // normal, crit, glance, block, evade, absorb, blind, invert
     matches!(result, 0..=4 | 6 | 7 | 13)
 }
 
 /// `DamageResult` values of buff damage that has a health value.
-fn is_buff_hit(result: u8) -> bool {
+pub(crate) fn is_buff_hit(result: u8) -> bool {
     // cycle, not cycle and its variants, absorb, invert
     matches!(result, 14..=18 | 6 | 13)
 }
