@@ -13,7 +13,7 @@ Stand 2026-11-24, Branch `phase1-ingest`. Code: `rust/ei-core/src/encounter.rs`,
 ## Was portiert ist
 
 - **Generischer Kampfbeginn:** `LogLogic.GetLogOffset` mit `GetEnterCombatTime`, `GetPostLogStartNPCUpdateDamageEventTime`. Instanz-Logs: 0. Sonst die Zeit, zu der das Hauptziel nach dem `LogNPCUpdate`-Datensatz in den Kampf ging.
-- **Encounter-spezifische Überschreibungen von `GetLogOffset`** (22 Encounter): Cairn (Rückfall über das Ende des ersten Zaubers fehlt), Xera, Sabir, Arkk, Escort (McLeod), Dhuum, River, Ensolyss, MAMA, Siax, Skorvald, Kanaxai, Greer, Ura, Kela, Vloxx, Statue des Eises, Qadim, Old Lions Court, SpiritRace (nur die Zeit, nicht die Trigger-ID-Überschreibung), Cerus. Gemeinsame Bausteine: `GetLogOffsetBySpawn`, `GetLogOffsetByInvulnStart`, `GetEnterCombatForStart`, `GetFirstDamageEventTime`.
+- **Encounter-spezifische Überschreibungen von `GetLogOffset`** (23 Encounter): Cairn (Rückfall über das Ende des ersten Zaubers fehlt), Xera, Sabir, Arkk, Escort (McLeod), Dhuum, River, Ensolyss, MAMA, Siax, Skorvald, Kanaxai, Greer, Ura, Kela, Vloxx, Statue des Eises, Statue des Todes (Seelenverzehrer: Peasants oder erster Schaden des Seelenfressers), Qadim, Old Lions Court, SpiritRace (nur die Zeit, nicht die Trigger-ID-Überschreibung), Cerus. Gemeinsame Bausteine: `GetLogOffsetBySpawn`, `GetLogOffsetByInvulnStart`, `GetEnterCombatForStart`, `GetFirstDamageEventTime`.
 - **Kampfende (`CheckSuccess`):** Reihenfolge wie in C#: bei den Raid-Wings zuerst der Belohnungsdatensatz (`CurrentRaidReward`), dann das Truhen-Gadget (`FindChestGadgets`: Gadget mit Hitbox 100 an der Truhenposition, ohne Bewegung; Zeit = erstes Auftreten), dann der Tod des Hauptziels (Zeit des letzten Spielerschadens, höchstens der Tod), sonst ein Fehlschlag zur letzten Zeit des Ziels. Bei den Icebrood-Strikes zuerst der Belohnungsdatensatz der Truhen. Ein Erfolg endet 10 ms nach der Zeit, höchstens am Log-Ende. Eigene Regeln: Ankka, Minister Li, Kanaxai, Ai (Sunqua), Mai Trin (Aetherblade), Old Lions Court, Golems, Twisted Castle und Spirit Race (alter Raid-Belohnungsdatensatz).
 
 ## Messung (103 Korpus-Logs, 26 Encounter)
@@ -22,12 +22,12 @@ Vergleich mit `logStartOffset` und `durationMS` des C#-Referenz-JSON:
 
 | Größe | identisch |
 | --- | ---: |
-| Kampfbeginn | 102 von 103 (nur generisch: 63) |
-| Dauer | 101 von 103 (nur Tod-Fall: 27; mit Truhe: 68; mit Belohnungsdatensätzen und eigenen Regeln: 101) |
+| Kampfbeginn | 103 von 103 (nur generisch: 63) |
+| Dauer | 102 von 103 (nur Tod-Fall: 27; mit Truhe: 68; mit Belohnungsdatensätzen und eigenen Regeln: 102) |
 
 Aufruf: `ei-parity ... --offsets`; er listet je Encounter die Logs mit Abweichung und Beispiele.
 
-Die 2 Logs mit abweichender Dauer: Seelenverzehrer (1 Log; der Kampfbeginn liegt 1.000 ms daneben) und ein Cerus-Log mit 1 ms Abweichung (beide Ursachen nicht gefunden).
+Das 1 Log mit abweichender Dauer: ein Cerus-Log mit 1 ms Abweichung (Ursache nicht gefunden).
 
 ## Zielliste und Vollkampf-Phase
 
@@ -45,7 +45,7 @@ Vergleich (`ei-parity --offsets`, Zeile `sub phases`): Start und Ende der Unterp
 Die übrigen rund 25 Logs mit Phasen (rund 20 Encounter) haben jeweils eigene Phasenlogik: Xera und Deimos (Vorereignis mit flüchtigen Zielen), Mai Trin, Ankka, Decima im Herausforderungsmodus, Harvest Temple, Kaineng, Arkk (die Blüten sind Trash-Agenten) und Greer. Sie sind **nicht portiert**; ohne ihre Zielliste (siehe Abweichungen oben) ist ein Vergleich dort auch nicht möglich.
 ## Nicht portiert (Ursachen der Abweichungen)
 
-- **Kampfbeginn:** nur Seelenverzehrer (keine eigene Regel in C#; der Agent hat in Rust den ersten Datensatz bei 1 ms, die Referenz beginnt bei 1.001 ms; Ursache nicht gefunden). Die Bandit-Trio-Regel lässt die Prüfung der Trash-Mobs weg, weil die C#-Funktion IsInBoundingBox den Kasten auf einen Punkt verkleinert (sie vergleicht mit der ersten Ecke statt mit beiden) und nie zutrifft.
+- **Kampfbeginn:** keine Abweichung im Korpus. Die Bandit-Trio-Regel lässt die Prüfung der Trash-Mobs weg, weil die C#-Funktion IsInBoundingBox den Kasten auf einen Punkt verkleinert (sie vergleicht mit der ersten Ecke statt mit beiden) und nie zutrifft.
 - **Kampfende:** Deimos nur ohne die Regeln des Zusammenschlusses bei 10 % (`Deimos.CheckSuccess` mit Angriffszielen; die Ziel-Zeit reicht wie in C# bis zum Log-Ende, das deckt den Fehlschlag im Korpus), Drachenleere nur ohne Truhe (`HarvestTemple.CheckSuccess`: Truhen-Gadget mit Hitbox 2 an der Truhenposition, sonst Fehlschlag am Log-Ende, das die Logik für die Ziele setzt; die verzögerte Belohnung über Soo-Won und Liftoff-Casts ist nicht portiert), Kampfausstieg (CombatExit, nur Xera und Qadim als Rückfall) und die übrigen CheckSuccess-Überschreibungen (zuletzt rund 45 Dateien; Encounter ohne Log im Korpus sind ungeprüft).
 - **Phasen, Zielliste, Schaden je Ziel und Phase, freundliche NPCs, Modus (CM), Mechaniken, Erfolgsbedingungen.**
 

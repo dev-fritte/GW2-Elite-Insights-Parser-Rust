@@ -67,15 +67,14 @@ Noch ohne Auswertung: `SubMechanic` (27), `EnemyStatus` (10), die Effekt-Mechani
 
 ## Messung (103 Korpus-Logs)
 
-Encounter-Mechaniken auf Spielern aus Daten: 1.471 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **4 Abweichungen**, alle aus der bekannten Ursache (Seelenverzehrer Kampfbeginn).
+Encounter-Mechaniken auf Spielern aus Daten: 1.471 Vergleiche (je Mechanik sortierte Liste aus Zeit und Spieler), **keine Abweichung**.
 
 Mechaniken auf Gegnern: 218 Vergleiche der Zeiten, **keine Abweichung**. Die Namen der Gegner entsprechen denen von C# (`enemy_names` in `mechanics.rs`): Gleichnamige Ziele werden wie `NumericallyRenameSpecies` mit einer Zahl versehen; danach folgen die Umbenennungen der Logiken, die sich aus dem Log ergeben (Cerus: "Empowered …" bei dem Buff beim Auftauchen und "… (Permanent)" für Verkörperungen, die mit Cerus auftauchen und eine eigene Zählung haben; Deimos: Dieb, Trunkenbold, Spieler; Greer: "Godspoil Greer" mit Ereg; Ura: "Ura, the Steamshrieker" oder "Godscream Ura" nach den Lebenspunkten, vor arcdps 2026-09-29 "Elite/Champion/Legendary" für die Adds; Ai: "Elemental Ai, Keeper of the Peak") und zuletzt der Rang aus den Agenten-Informationen ("Veteran ", "Elite ", "Champion ", "Legendary "; arcdps ab 2026-09-29). Nicht portiert: die dunkle Ai, die Instanz Sunqua Peak, die Namen der übrigen Logiken (Splitter, Herzen, Phasen-Ziele, Xera und andere) und die Gemeinschaftsfarben der Trash-Mobs.
 
 Allgemeine Mechaniken:
 
-14 Mechaniken je Log, 1.442 Vergleiche (sortierte Liste aus Zeit und Spieler), **17 Abweichungen**:
+14 Mechaniken je Log, 1.442 Vergleiche (sortierte Liste aus Zeit und Spieler), **3 Abweichungen**:
 
-- **Bekannte Ursachen anderswo:** Deimos (Kampfende), Drachenleere (Kampfende) und Seelenverzehrer (Kampfbeginn 1 s) mit zusammen 14.
 - **Lckt:** 3 Logs (Faultierion, Matthias zweimal): C# lässt einzelne Sperr-Ereignisse weg (bei Matthias genau die der geopferten Spieler, mit Quelle gleich Ziel und Dauer 10 s), die Regel dafür ist nicht gefunden. Quelle gleich Ziel allein ist es nicht (Fraenir hat solche Ereignisse, die zählen).
 
 Die früheren DC-Abweichungen (Arkk, Kela, McLeod) waren keine künstlichen Ereignisse: es sind Despawn-Datensätze ohne Adresse, die C# über die Instanz-ID zuordnet.
