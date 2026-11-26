@@ -196,18 +196,37 @@ L '    /// First and last (exclusive) GW2 build the mechanic is available in.'
 L '    pub builds: (u64, u64),'
 L '    /// First and last (exclusive) arcdps build the mechanic is available in.'
 L '    pub evtc_builds: (i32, i32),'
+L '    /// For a sub mechanic: whether the affected player has (`Some(true)`) or has not stability 10 ms before.'
+L '    pub stability: Option<bool>,'
 L '}'
 L ''
 L '/// All mechanics, ordered by trigger id.'
 L 'pub const MECHANICS: &[Mechanic] = &['
 $n = 0
-foreach ($r in ($rows | Sort-Object { [int]$_.Trigger })) {
-    if (-not $kinds.ContainsKey($r.Type)) { continue }
+# the mechanics themselves and the sub mechanics that split their events by stability
+$items = New-Object System.Collections.ArrayList
+foreach ($r in $rows) {
+    if ($kinds.ContainsKey($r.Type)) {
+        [void]$items.Add([pscustomobject]@{ Row = $r; Name = $r.Short; Stab = 'none'; Trigger = [int]$r.Trigger })
+    } elseif ($r.Type -eq 'SubMechanic') {
+        $info = $filterOf["$($r.Logic)|SubMechanic|$($r.Short)"]
+        if ($info -notmatch '^sub:(.*):(stab|nostab)$') { continue }
+        $parent = $rows | Where-Object { $_.Trigger -eq $r.Trigger -and $_.Logic -eq $r.Logic -and $_.Short -eq $Matches[1] -and $kinds.ContainsKey($_.Type) } | Select-Object -First 1
+        if ($parent) {
+            [void]$items.Add([pscustomobject]@{ Row = $parent; Name = $r.Short; Stab = $Matches[2]; Trigger = [int]$r.Trigger })
+        }
+    }
+}
+foreach ($item in ($items | Sort-Object Trigger)) {
+    $r = $item.Row
+    $stab = $item.Stab
     $kind = $kinds[$r.Type]
     $isEffect = $effectKinds -contains $kind
     # an effect mechanic's only condition is that the log has effect data
     $enables = if ($isEffect) { '1' } else { '0' }
-    if ($r.Subs -ne '0' -or $r.Clamper -ne '0' -or $r.Enables -ne $enables -or $r.Minions -ne '0' -or $r.Ignored -ne '0') { continue }
+    if ($r.Clamper -ne '0' -or $r.Enables -ne $enables -or $r.Minions -ne '0') { continue }
+    # a mechanic that is ignored only shows through its sub mechanics
+    if ($stab -eq 'none' -and $r.Ignored -ne '0') { continue }
     $code = ''
     if ($r.Checkers -ne '0') {
         if ($r.Checkers -ne '1') { continue }
@@ -218,7 +237,7 @@ foreach ($r in ($rows | Sort-Object { [int]$_.Trigger })) {
     if ($allowed[$kind] -notcontains $base) { continue }
     # negative ids are gadget interactions and emotes, no animated casts
     if ($kind -eq 'PlayerCastStart' -and $r.Ids -match '-') { continue }
-    $name = $r.Short.Replace('\', '\\').Replace('"', '\"')
+    $name = $item.Name.Replace('\', '\\').Replace('"', '\"')
     $ids = $r.Ids
     $guids = ''
     if ($isEffect) {
@@ -229,7 +248,7 @@ foreach ($r in ($rows | Sort-Object { [int]$_.Trigger })) {
         }) -join ', '
         $ids = ''
     }
-    L ("    Mechanic {{ trigger_id: {0}, kind: Kind::{1}, filter: {8}, ids: &[{2}], guids: &[{9}], name: ""{3}"", builds: ({4}, {5}), evtc_builds: ({6}, {7}) }}," -f $r.Trigger, $kind, $ids, $name, $r.MinBuild, $r.MaxBuild, $r.MinEvtc, $r.MaxEvtc, (Get-FilterExpr $code), $guids)
+    L ("    Mechanic {{ trigger_id: {0}, kind: Kind::{1}, filter: {8}, ids: &[{2}], guids: &[{9}], name: ""{3}"", builds: ({4}, {5}), evtc_builds: ({6}, {7}), stability: {10} }}," -f $r.Trigger, $kind, $ids, $name, $r.MinBuild, $r.MaxBuild, $r.MinEvtc, $r.MaxEvtc, (Get-FilterExpr $code), $guids, $(if ($stab -eq 'stab') { 'Some(true)' } elseif ($stab -eq 'nostab') { 'Some(false)' } else { 'None' }))
     $n++
 }
 L '];'

@@ -118,12 +118,21 @@ for (const file of walk(root)) {
       chain.push([mm[1], s.slice(o2 + 1, e2 - 1).replace(/\s+/g, ' ').trim()]);
       k = e2;
     }
-    // only a checker and build ranges may be added
-    if (chain.some(x => !/^Using(Checker|BuffChecker)$/.test(x[0]) && x[0] !== 'WithBuilds')) continue;
+    // only a checker, build ranges, the ignoring of the mechanic itself and sub mechanics that
+    // split the events by stability may be added
+    if (chain.some(x => !/^Using(Checker|BuffChecker|Ignored)$/.test(x[0]) && !['WithBuilds', 'WithStabilitySubMechanic'].includes(x[0]))) continue;
+    for (const [name, a] of chain) {
+      if (name !== 'WithStabilitySubMechanic') continue;
+      const sub = /^new SubMechanic[(].*? new *[(] *"([^"]*)".*, *(true|false)$/.exec(a);
+      if (!sub) continue;
+      const subKey = [path.basename(file, '.cs'), 'SubMechanic', sub[1]].join('	');
+      if (!seen.has(subKey)) seen.set(subKey, new Set());
+      seen.get(subKey).add('sub:' + short[1] + ':' + (sub[2] === 'true' ? 'stab' : 'nostab'));
+    }
     const filter = classify(chain);
     const key = [path.basename(file, '.cs'), m[1], short[1]].join('\t');
     if (!seen.has(key)) seen.set(key, new Set());
-    seen.get(key).add(filter || '');
+    if (m[1] !== 'SubMechanic') seen.get(key).add(filter || '');
   }
 }
 const lines = ['Logic\tType\tShort\tFilter'];

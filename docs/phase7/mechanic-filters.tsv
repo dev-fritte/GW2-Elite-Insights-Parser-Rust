@@ -3,10 +3,12 @@ Adina	PlayerDstHealthDamageHitMechanic	Perilous Pulse	nostab
 Adina	PlayerDstHealthDamageMechanic	S.Thrower	killed
 AetherbladeHideout	PlayerDstHealthDamageMechanic	Green.Dwn	downed
 AetherbladeHideout	PlayerDstHealthDamageMechanic	Spread.Dwn	downed
+AetherbladeHideout	SubMechanic	HrtPier.CC	sub:HrtPier.H:nostab
 AiKeeperOfThePeak	EnemyCastEndMechanic	Int.Glt.Mnp.	interrupted
 AiKeeperOfThePeak	EnemyCastEndMechanic	IntFear.Mnp.	interrupted
 AiKeeperOfThePeak	EnemyCastEndMechanic	IntSor.Mnp.	interrupted
 AiKeeperOfThePeak	PlayerDstHealthDamageMechanic	Mtr.H	downedorkilled
+AiKeeperOfThePeak	SubMechanic	L.Wnd.Burst	sub:Wnd.Brst.:nostab
 Arkk	EnemyCastEndMechanic	Pull CC Fail	dur>3200
 Arkk	EnemyCastEndMechanic	Pull CCed	dur<3200
 BanditTrio	PlayerDstBuffApplyMechanic	Blinded	species:by=16137
@@ -16,9 +18,12 @@ BanditTrio	PlayerSrcHealthDamageHitMechanic	Beehive.H.B	species:to=16088
 Boneskinner	EnemyCastEndMechanic	D.Darkness	notinterrupted
 Boneskinner	EnemyCastEndMechanic	D.Torch	notinterrupted
 Boneskinner	EnemyCastEndMechanic	D.Wind	notinterrupted
+Cairn	SubMechanic	Green.C	sub:Std.Green:nostab
+Cairn	SubMechanic	Stab.Green.C	sub:Std.Green:stab
 ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Ground	damage
 ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Tremor	damage
 ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Wall	damage
+ConjuredAmalgamate	SubMechanic	Stab.Slam	sub:Arm Slam:stab
 CosmicObservatory	AchievementEligibilityMechanic	DancStars.Achiv.K	kept
 CosmicObservatory	AchievementEligibilityMechanic	DancStars.Achiv.L	lost
 CosmicObservatory	EnemyDstBuffApplyMechanic	Planet Crash (Int)	species:to=25705
@@ -27,6 +32,9 @@ CosmicObservatory	PlayerSrcHealthDamageHitMechanic	PurLight.Dagda.C	species:to=2
 CosmicObservatory	PlayerSrcHealthDamageHitMechanic	PurLight.Soul.C	species:to=26069
 DecimaTheStormsinger	AchievementEligibilityMechanic	BugDance.Achiv.K	kept
 DecimaTheStormsinger	AchievementEligibilityMechanic	BugDance.Achiv.L	lost
+DecimaTheStormsinger	SubMechanic	Earthrend.CC	sub:Earthrend.H:nostab
+DecimaTheStormsinger	SubMechanic	SeisCrash.CC	sub:SeisCrash.H:nostab
+DecimaTheStormsinger	SubMechanic	SeisRepos.CC	sub:SeisRepos.H:nostab
 Deimos	EnemyCastEndMechanic	TP CC Fail	dur>=2200
 Deimos	EnemyCastEndMechanic	TP CCed	dur<2200
 Deimos	EnemyCastEndMechanic	Thief CC Fail	dur>=4400
@@ -65,11 +73,20 @@ GuardiansGlade	AchievementEligibilityMechanic	Achiv.Sand.K	kept
 GuardiansGlade	AchievementEligibilityMechanic	Achiv.Sand.L	lost
 GuardiansGlade	EnemySrcHealthDamageMechanic	Ate Artifact	species:to=27663
 GuardiansGlade	EnemySrcHealthDamageMechanic	Ate Croc	species:to=27658
+GuardiansGlade	SubMechanic	ClawSlam.CC	sub:ClawSlam.H:nostab
+GuardiansGlade	SubMechanic	CrocTackle.CC	sub:CrocTackle.H:nostab
+GuardiansGlade	SubMechanic	LightStk.CC	sub:LightStk.H:nostab
+GuardiansGlade	SubMechanic	Stomp.CC	sub:Stomp.H:nostab
+GuardiansGlade	SubMechanic	Tornado.CC	sub:Tornado.H:nostab
 HarvestTemple	AchievementEligibilityMechanic	NopeRopes.Achiv.K	kept
 HarvestTemple	AchievementEligibilityMechanic	NopeRopes.Achiv.L	lost
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Kick.H	nostab
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Scream.G.CC	nostab
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Stomp.CC	nostab
+HarvestTemple	SubMechanic	Charge.CC	sub:Charge.H:nostab
+HarvestTemple	SubMechanic	GlaSlam.CC	sub:GlaSlam.H:nostab
+IcebroodConstruct	SubMechanic	ArmSwing.CC	sub:A.Swing:nostab
+IcebroodConstruct	SubMechanic	IceFlail.CC	sub:I.Flail:nostab
 KainengOverlook	AchievementEligibilityMechanic	MostResi.Achiv.G	kept
 KainengOverlook	AchievementEligibilityMechanic	MostResi.Achiv.N.G	lost
 KainengOverlook	AchievementEligibilityMechanic	TextReflx.Achiv.K	kept
@@ -86,6 +103,7 @@ NexusOfEternity	EnemySrcEnemyDstBuffApplyMechanic	Emp.St	species:by=28017
 NexusOfEternity	EnemySrcEnemyDstBuffApplyMechanic	Emp.Sw	species:by=28107
 NexusOfEternity	EnemySrcMissileMechanic	Asp.OrbGen	species:by=28106,28017,28033,28107
 NexusOfEternity	PlayerDstHealthDamageMechanic	WorldpierV.K	killed
+NexusOfEternity	SubMechanic	AnnOrb.Shck.KD	sub:AnnOrb.Shck.H:nostab
 OldLionsCourt	AchievementEligibilityMechanic	AethAver.Achiv.K	kept
 OldLionsCourt	AchievementEligibilityMechanic	AethAver.Achiv.L	lost
 OldLionsCourt	PlayerDstBuffApplyMechanic	Fix.Arse.A	species:by=25415,25416
@@ -162,6 +180,7 @@ UraTheSteamshrieker	AchievementEligibilityMechanic	Achiv.Hop.K	kept
 UraTheSteamshrieker	AchievementEligibilityMechanic	Achiv.Hop.L	lost
 UraTheSteamshrieker	PlayerDstHealthDamageHitMechanic	FullSteam.H	nostab
 UraTheSteamshrieker	PlayerDstHealthDamageHitMechanic	StnSlam.CC	nostab
+UraTheSteamshrieker	SubMechanic	UraJump.CC	sub:UraJump.H:nostab
 ValeGuardian	EnemyCastEndMechanic	CC.VG Fail	dur>8544
 ValeGuardian	EnemyCastEndMechanic	CCed.VG	dur<=8544
 WhisperingShadow	AchievementEligibilityMechanic	Shatterstep.Achiv.K	kept

@@ -953,7 +953,7 @@ fn enemy_events(
                     let unnamed = agents
                         .iter()
                         .find(|a| a.address() == f.src)
-                        .is_none_or(|a| a.name().starts_with(' ') || a.name().is_empty());
+                        .is_none_or(|a| a.name().starts_with('\0') || a.name().is_empty());
                     unnamed.then(|| ENVIRONMENT.to_owned())
                 })?;
                 Some((f.time - fight.offset, name))
@@ -1490,7 +1490,9 @@ fn player_events(
         })
         .filter_map(|e| Some((e, index_of(affected(e))?)))
         .filter(|(e, i)| {
-            m.filter != Filter::NoStability || !has_stability(*i, e.time - offset - SERVER_DELAY)
+            (m.filter != Filter::NoStability || !has_stability(*i, e.time - offset - SERVER_DELAY))
+                && m.stability
+                    .is_none_or(|want| has_stability(*i, e.time - offset - SERVER_DELAY) == want)
         })
         .map(|(e, i)| (e.time - offset, i))
         .filter(|(time, _)| (0..=duration).contains(time))
