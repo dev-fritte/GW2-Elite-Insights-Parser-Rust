@@ -13,6 +13,7 @@ Arkk	EnemyCastEndMechanic	Pull CC Fail	dur>3200
 Arkk	EnemyCastEndMechanic	Pull CCed	dur<3200
 BanditTrio	PlayerDstBuffApplyMechanic	Blinded	species:by=16137
 BanditTrio	PlayerDstBuffApplyMechanic	Burning	species:by=16125
+BanditTrio	PlayerSrcBuffApplyMechanic	Hit Cage	species:to=-46
 BanditTrio	PlayerSrcBuffApplyMechanic	Targeted.B	species:to=16088
 BanditTrio	PlayerSrcHealthDamageHitMechanic	Beehive.H.B	species:to=16088
 Boneskinner	EnemyCastEndMechanic	D.Darkness	notinterrupted
@@ -32,6 +33,8 @@ CosmicObservatory	PlayerSrcHealthDamageHitMechanic	PurLight.Dagda.C	species:to=2
 CosmicObservatory	PlayerSrcHealthDamageHitMechanic	PurLight.Soul.C	species:to=26069
 DecimaTheStormsinger	AchievementEligibilityMechanic	BugDance.Achiv.K	kept
 DecimaTheStormsinger	AchievementEligibilityMechanic	BugDance.Achiv.L	lost
+DecimaTheStormsinger	PlayerDstHealthDamageHitMechanic	FluxInc.H	buff:74904,has,0,10
+DecimaTheStormsinger	PlayerDstHealthDamageHitMechanic	SparkAuraInc.H	buff:74659,has,0,10
 DecimaTheStormsinger	SubMechanic	Earthrend.CC	sub:Earthrend.H:nostab
 DecimaTheStormsinger	SubMechanic	SeisCrash.CC	sub:SeisCrash.H:nostab
 DecimaTheStormsinger	SubMechanic	SeisRepos.CC	sub:SeisRepos.H:nostab
@@ -47,6 +50,7 @@ Dhuum	PlayerDstBuffApplyMechanic	SupSpeed.Orb	species:by=19481
 Dhuum	PlayerDstHealthDamageHitMechanic	Shackles dmg	damage
 Ensolyss	EnemyCastEndMechanic	CC.E Fail	dur>=15260
 Ensolyss	EnemyCastEndMechanic	CCed	dur<15260
+Escort	PlayerDstHealthDamageMechanic	Mine.H	species:by=-35
 FraenirOfJormag	PlayerDstHealthDamageHitMechanic	FrozenMissile.CC	nostab
 FraenirOfJormag	PlayerDstHealthDamageHitMechanic	Ice Shock Wave	nostab
 FraenirOfJormag	PlayerDstHealthDamageHitMechanic	IceArmSwing.CC	nostab
@@ -83,6 +87,7 @@ HarvestTemple	AchievementEligibilityMechanic	NopeRopes.Achiv.L	lost
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Kick.H	nostab
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Scream.G.CC	nostab
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Stomp.CC	nostab
+HarvestTemple	PlayerSrcAllHealthDamageHitsMechanic	Orb Push	species:to=-23,23956&direct
 HarvestTemple	SubMechanic	Charge.CC	sub:Charge.H:nostab
 HarvestTemple	SubMechanic	GlaSlam.CC	sub:GlaSlam.H:nostab
 IcebroodConstruct	SubMechanic	ArmSwing.CC	sub:A.Swing:nostab
@@ -94,6 +99,11 @@ KainengOverlook	AchievementEligibilityMechanic	TextReflx.Achiv.L	lost
 KainengOverlook	PlayerDstBuffApplyMechanic	Fixated.E	species:by=24261,25236
 KainengOverlook	PlayerDstBuffApplyMechanic	Fixated.M	species:by=24254,25280
 KainengOverlook	PlayerDstHealthDamageMechanic	Bomb.D	downed
+KeepConstruct	PlayerDstHealthDamageHitMechanic	BR.Orb	buff:35091,no,0,0
+KeepConstruct	PlayerDstHealthDamageHitMechanic	BW.Orb	buff:35109,no,0,0
+KeepConstruct	PlayerDstHealthDamageHitMechanic	GR.Orb	buff:35091,has,0,0
+KeepConstruct	PlayerDstHealthDamageHitMechanic	GW.Orb	buff:35109,has,0,0
+KeepConstruct	PlayerSrcAllHealthDamageHitsMechanic	Core Hit	species:to=16261&direct
 MursaatOverseer	PlayerDstBuffApplyMechanic	Protect	applied=1000
 NexusOfEternity	AchievementEligibilityMechanic	TrueVisionary.Achiv.K	kept
 NexusOfEternity	AchievementEligibilityMechanic	TrueVisionary.Achiv.L	lost
@@ -174,12 +184,16 @@ TempleOfFebe	EnemyDstBuffApplyMechanic	Gluttony.K	speciesbuff:25677,70687,no,0
 TempleOfFebe	EnemyDstBuffApplyMechanic	Malice.K	speciesbuff:25700,70621,no,0
 TempleOfFebe	EnemyDstBuffApplyMechanic	Rage.K	speciesbuff:25686,70181,no,0
 TempleOfFebe	EnemyDstBuffApplyMechanic	Regret.K	speciesbuff:26049,70544,no,0
+TempleOfFebe	PlayerDstBuffRemoveMechanic	EnvGaze.Strip	species:by=25989,25967,-57
 TempleOfFebe	PlayerDstHealthDamageHitMechanic	EnrSmash.D	downed
 TwinLargos	PlayerDstHealthDamageHitMechanic	Wave	nostab
 UraTheSteamshrieker	AchievementEligibilityMechanic	Achiv.Hop.K	kept
 UraTheSteamshrieker	AchievementEligibilityMechanic	Achiv.Hop.L	lost
 UraTheSteamshrieker	PlayerDstHealthDamageHitMechanic	FullSteam.H	nostab
 UraTheSteamshrieker	PlayerDstHealthDamageHitMechanic	StnSlam.CC	nostab
+UraTheSteamshrieker	PlayerSrcBuffRemoveFromMechanic	Dispel.Sulf	species:to=-63
+UraTheSteamshrieker	PlayerSrcBuffRemoveFromMechanic	Dispel.Titn	species:to=26741,-93
+UraTheSteamshrieker	PlayerSrcBuffRemoveFromMechanic	Dispel.Toxc	species:to=-62
 UraTheSteamshrieker	SubMechanic	UraJump.CC	sub:UraJump.H:nostab
 ValeGuardian	EnemyCastEndMechanic	CC.VG Fail	dur>8544
 ValeGuardian	EnemyCastEndMechanic	CCed.VG	dur<=8544

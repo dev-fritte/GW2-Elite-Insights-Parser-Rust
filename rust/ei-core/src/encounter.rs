@@ -1960,12 +1960,12 @@ pub(crate) fn species_first_seen(kept: &Kept, table: AgentTable<'_>, id: i64) ->
 
 /// The species of every non player character and gadget by address.
 #[must_use]
-pub(crate) fn species_by_address(table: AgentTable<'_>) -> HashMap<u64, u32> {
+pub(crate) fn species_by_address(table: AgentTable<'_>) -> HashMap<u64, i64> {
     table
         .iter()
         .filter_map(|a| match agent_kind(a) {
-            AgentKind::Npc => Some((a.address(), a.profession())),
-            AgentKind::Gadget => Some((a.address(), a.profession() & 0xFFFF)),
+            AgentKind::Npc => Some((a.address(), i64::from(a.profession()))),
+            AgentKind::Gadget => Some((a.address(), i64::from(a.profession() & 0xFFFF))),
             _ => None,
         })
         .collect()

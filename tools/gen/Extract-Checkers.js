@@ -43,7 +43,12 @@ const targetIds = new Map();
   const src = fs.readFileSync(path.join(root, '..', 'ParserHelpers/IDs/SpeciesIDs.cs'), 'utf8').replace(/\r/g, '');
   const start = src.indexOf('enum TargetID');
   const end = src.indexOf('\n    }', start);
-  for (const m of src.slice(start, end).matchAll(/^\s*(\w+)\s*=\s*(\d+)\s*,/gm)) targetIds.set(m[1], m[2]);
+  const consts = new Map();
+  for (const m of src.matchAll(/const int ([A-Za-z0-9_]+) *= *(-?[0-9]+);/g)) consts.set(m[1], m[2]);
+  for (const m of src.slice(start, end).matchAll(/^ *([A-Za-z0-9_]+) *= *(-?[0-9]+|SpeciesIDs[.][A-Za-z0-9_]+) *,/gm)) {
+    const v = m[2].startsWith('SpeciesIDs.') ? consts.get(m[2].slice(11)) : m[2];
+    if (v !== undefined) targetIds.set(m[1], v);
+  }
 }
 
 // numeric values of the skill and buff constants
@@ -69,6 +74,15 @@ function classify(chain) {
   if (checkers.length !== 1) return null;
   const [name, a] = checkers[0];
   let m;
+  // a direct hit on an agent of one or two species
+  if ((m = /^[(][A-Za-z0-9_]+, *log[)] *=> *[(]?[A-Za-z0-9_]+[.]To[.]IsSpecies[(]TargetID[.]([A-Za-z0-9_]+)[)](?: *[|][|] *[A-Za-z0-9_]+[.]To[.]IsSpecies[(]TargetID[.]([A-Za-z0-9_]+)[)])?[)]? *&& *[A-Za-z0-9_]+ is DirectHealthDamageEvent$/.exec(a))) {
+    const ids = [m[1], m[2]].filter(Boolean).map(n => targetIds.get(n));
+    if (ids.every(Boolean)) return 'species:to=' + ids.join(',') + '&direct';
+  }
+  // the target has (or has not) a buff when the event happens, possibly within a window
+  if ((m = /^[(][A-Za-z0-9_]+, *log[)] *=> *(!?) *[A-Za-z0-9_]+[.]To[.]HasBuff[(]log, *([A-Za-z0-9_]+), *[A-Za-z0-9_]+[.]Time( *- *(?:ParserHelper[.])?ServerDelayConstant)?(, *(?:ParserHelper[.])?ServerDelayConstant)?[)]$/.exec(a))) {
+    if (skillIds.has(m[2])) return 'buff:' + skillIds.get(m[2]) + ',' + (m[1] ? 'no' : 'has') + ',' + (m[3] ? 10 : 0) + ',' + (m[4] ? 10 : 0);
+  }
   // the target is of the species and has (or has not) a buff when the event happens
   if ((m = /^\(\w+,\s*log\)\s*=>\s*\w+\.To\.IsSpecies\(TargetID\.(\w+)\)\s*(?:&&|&)\s*(!?)\s*\w+\.To\.HasBuff\(log,\s*(\w+),\s*\w+\.Time(?:\s*-\s*(?:ParserHelper\.)?ServerDelayConstant)?\)$/.exec(a))) {
     if (targetIds.has(m[1]) && skillIds.has(m[3])) {

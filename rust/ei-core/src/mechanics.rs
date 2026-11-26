@@ -590,7 +590,7 @@ pub fn encounter_mechanics(
             .filter(|&i| active[i])
     };
     let buff_times = BuffLookup::new(buffs);
-    let has_buff = |address: u64, buff: i64, time: i64| buff_times.has(address, buff, time);
+    let has_buff = |address: u64, buff: i64, time: i64| buff_times.has(address, buff, time, time);
     let achievements = achievement_events(kept, players, &spans, &active, fight, trigger_id, &defs);
     let enemy_names = enemy_names(kept, table, targets, offset);
     let species = species_of_agents(table, &enemy_names);
@@ -635,7 +635,7 @@ pub fn encounter_mechanics(
                     duration,
                     &species,
                     &index_of,
-                    &mut |i, time| has_buff(players[i].address, STABILITY, time),
+                    &mut |i, buff, from, to| buff_times.has(players[i].address, buff, from, to),
                 ),
                 enemies: Vec::new(),
             },
@@ -644,7 +644,10 @@ pub fn encounter_mechanics(
                 events: player_effect_events(m, &effects, fight, &index_of),
                 enemies: Vec::new(),
             },
-            Kind::PlayerSrcHit | Kind::PlayerCastStart | Kind::PlayerSrcBuffApply => MechanicRow {
+            Kind::PlayerSrcHit
+            | Kind::PlayerSrcAllHit
+            | Kind::PlayerCastStart
+            | Kind::PlayerSrcBuffApply => MechanicRow {
                 name: m.name,
                 events: player_source_events(kept, m, fight, &casts, &species, &index_of),
                 enemies: Vec::new(),
@@ -791,14 +794,21 @@ impl<'a> BuffLookup<'a> {
         }
     }
 
-    /// Whether the agent has the buff at the time.
-    fn has(&self, address: u64, buff: i64, time: i64) -> bool {
+    /// Whether the agent has the buff at the time, or at any time between `from` and `to` if
+    /// they differ (`HasBuff` with a window).
+    fn has(&self, address: u64, buff: i64, from: i64, to: i64) -> bool {
         self.cache
             .borrow_mut()
             .entry((address, buff))
             .or_insert_with(|| (self.buffs)(address, buff))
             .iter()
-            .any(|&(start, end)| start <= time && time < end)
+            .any(|&(start, end)| {
+                if from == to {
+                    start <= from && from < end
+                } else {
+                    start <= to && end > from
+                }
+            })
     }
 }
 
@@ -813,21 +823,30 @@ struct Lookup<'a> {
     /// The animated casts.
     casts: &'a [EnemyCast],
     /// Species of each agent.
-    species: &'a HashMap<u64, u32>,
+    species: &'a HashMap<u64, i64>,
     /// Whether an agent has a buff at a time (agent, buff id, time).
     has_buff: &'a dyn Fn(u64, i64, i64) -> bool,
 }
 
 /// The species of every agent; the embodiments that appear with Cerus are of their own species
-/// in C# (here 0).
+/// in C# (the negative ids the stable species of the permanent embodiments have).
 fn species_of_agents(
     table: evtc_ingest::AgentTable<'_>,
     enemy_names: &HashMap<u64, String>,
-) -> HashMap<u64, u32> {
+) -> HashMap<u64, i64> {
     let mut species = crate::encounter::species_by_address(table);
     for (address, name) in enemy_names {
         if name.ends_with("(Permanent)") {
-            species.insert(*address, 0);
+            let permanent = species.get(address).and_then(|s| match *s {
+                25_677 => Some(-53),
+                25_686 => Some(-54),
+                26_034 => Some(-55),
+                26_049 => Some(-56),
+                25_967 => Some(-57),
+                25_700 => Some(-58),
+                _ => None,
+            });
+            species.insert(*address, permanent.unwrap_or(0));
         }
     }
     species
@@ -845,15 +864,13 @@ fn all_casts(kept: &Kept, players: &[Player], enemies: &HashMap<u64, String>) ->
 /// the mechanics without such a check. `agent` gives the address of the target or the source.
 fn species_ok(
     filter: ei_data::mechanics::Filter,
-    species: &HashMap<u64, u32>,
+    species: &HashMap<u64, i64>,
     agent: impl Fn(Side) -> u64,
 ) -> bool {
     let ei_data::mechanics::Filter::Species(side, ids) = filter else {
         return true;
     };
-    species
-        .get(&agent(side))
-        .is_some_and(|s| ids.contains(&i64::from(*s)))
+    species.get(&agent(side)).is_some_and(|s| ids.contains(s))
 }
 
 /// The events of the mechanics that look at what players do: hits and the start of casts.
@@ -862,7 +879,7 @@ fn player_source_events(
     m: &ei_data::mechanics::Mechanic,
     fight: Fight,
     casts: &[EnemyCast],
-    species: &HashMap<u64, u32>,
+    species: &HashMap<u64, i64>,
     index_of: &dyn Fn(u64) -> Option<usize>,
 ) -> Vec<(i64, usize)> {
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
@@ -881,6 +898,19 @@ fn player_source_events(
                             e.src_agent
                         })
                     })
+            })
+            .filter_map(|e| Some((e.time - fight.offset, index_of(e.src_agent)?)))
+            .collect()
+    } else if m.kind == ei_data::mechanics::Kind::PlayerSrcAllHit {
+        // the direct hits of the player themself, whatever the skill
+        kept.events
+            .iter()
+            .filter(|e| {
+                e.state_change == sc::COMBAT
+                    && e.src_agent != 0
+                    && e.is_buff == 0
+                    && DIRECT_HIT_RESULTS.contains(&e.result)
+                    && species_ok(m.filter, species, |_| redirect(e.dst_agent))
             })
             .filter_map(|e| Some((e.time - fight.offset, index_of(e.src_agent)?)))
             .collect()
@@ -988,9 +1018,7 @@ fn enemy_events(
                 } = m.filter
                 {
                     let target = redirect(agent);
-                    let is_species = species
-                        .get(&target)
-                        .is_some_and(|s| i64::from(*s) == wanted);
+                    let is_species = species.get(&target).is_some_and(|s| *s == wanted);
                     let time = e.time - fight.offset - delay;
                     if !is_species || has_buff(target, buff, time) != present {
                         return None;
@@ -1433,9 +1461,9 @@ fn player_events(
     m: &ei_data::mechanics::Mechanic,
     offset: i64,
     duration: i64,
-    species: &HashMap<u64, u32>,
+    species: &HashMap<u64, i64>,
     index_of: &dyn Fn(u64) -> Option<usize>,
-    has_stability: &mut dyn FnMut(usize, i64) -> bool,
+    has_buff: &mut dyn FnMut(usize, i64, i64, i64) -> bool,
 ) -> Vec<(i64, usize)> {
     use ei_data::mechanics::{Filter, Kind};
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
@@ -1490,9 +1518,25 @@ fn player_events(
         })
         .filter_map(|e| Some((e, index_of(affected(e))?)))
         .filter(|(e, i)| {
-            (m.filter != Filter::NoStability || !has_stability(*i, e.time - offset - SERVER_DELAY))
-                && m.stability
-                    .is_none_or(|want| has_stability(*i, e.time - offset - SERVER_DELAY) == want)
+            let time = e.time - offset;
+            let mut stable = || has_buff(*i, STABILITY, time - SERVER_DELAY, time - SERVER_DELAY);
+            if m.filter == Filter::NoStability && stable() {
+                return false;
+            }
+            if m.stability.is_some_and(|want| stable() != want) {
+                return false;
+            }
+            if let Filter::TargetBuff {
+                buff,
+                present,
+                delay,
+                window,
+            } = m.filter
+            {
+                let at = time - delay;
+                return has_buff(*i, buff, at - window, at + window) == present;
+            }
+            true
         })
         .map(|(e, i)| (e.time - offset, i))
         .filter(|(time, _)| (0..=duration).contains(time))

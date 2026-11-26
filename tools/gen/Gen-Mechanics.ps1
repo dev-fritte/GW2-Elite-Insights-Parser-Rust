@@ -26,6 +26,7 @@ $kinds = @{
     'PlayerSrcHealthDamageHitMechanic' = 'PlayerSrcHit'
     'PlayerCastStartMechanic' = 'PlayerCastStart'
     'PlayerSrcBuffApplyMechanic' = 'PlayerSrcBuffApply'
+    'PlayerSrcAllHealthDamageHitsMechanic' = 'PlayerSrcAllHit'
     'PlayerDstEffectMechanic' = 'PlayerDstEffect'
     'PlayerSrcEffectMechanic' = 'PlayerSrcEffect'
     'EnemySrcEffectMechanic' = 'EnemySrcEffect'
@@ -34,12 +35,13 @@ $kinds = @{
 $effectKinds = @('PlayerDstEffect', 'PlayerSrcEffect', 'EnemySrcEffect')
 # the filters each kind can evaluate ('dur' stands for the duration comparisons)
 $allowed = @{
-    'PlayerDstHit' = @('', 'nostab', 'damage', 'species')
+    'PlayerDstHit' = @('', 'nostab', 'damage', 'species', 'buff')
     'PlayerDstBuffApply' = @('', 'applied', 'species')
     'PlayerSrcBuffApply' = @('', 'species')
+    'PlayerSrcAllHit' = @('species')
     'Spawn' = @('')
-    'EnemyDstBuffRemove' = @('')
-    'PlayerDstBuffRemove' = @('')
+    'EnemyDstBuffRemove' = @('', 'species')
+    'PlayerDstBuffRemove' = @('', 'species')
     'PlayerSrcHit' = @('', 'species')
     'PlayerCastStart' = @('', 'dur', 'interrupted', 'notinterrupted')
     'PlayerDstDamage' = @('killed', 'downed', 'downedorkilled', 'species')
@@ -66,8 +68,9 @@ function Get-FilterExpr([string]$code) {
         '^downed$' { return 'Filter::Downed' }
         '^downedorkilled$' { return 'Filter::DownedOrKilled' }
         '^applied=(\d+)$' { return "Filter::AppliedDuration($($Matches[1]))" }
-        '^species:(to|by)=([\d,]+)$' { return "Filter::Species(Side::$(if ($Matches[1] -eq 'to') { 'To' } else { 'By' }), &[$($Matches[2])])" }
+        '^species:(to|by)=([-0-9,]+)(&direct)?$' { return "Filter::Species(Side::$(if ($Matches[1] -eq 'to') { 'To' } else { 'By' }), &[$($Matches[2])])" }
         '^speciesbuff:(\d+),(\d+),(has|no),(\d+)$' { return "Filter::SpeciesBuff { species: $($Matches[1]), buff: $($Matches[2]), present: $(if ($Matches[3] -eq 'has') { 'true' } else { 'false' }), delay: $($Matches[4]) }" }
+        '^buff:([0-9]+),(has|no),([0-9]+),([0-9]+)$' { return "Filter::TargetBuff { buff: $($Matches[1]), present: $(if ($Matches[2] -eq 'has') { 'true' } else { 'false' }), delay: $($Matches[3]), window: $($Matches[4]) }" }
         '^interrupted$' { return 'Filter::Interrupted' }
         '^notinterrupted$' { return 'Filter::NotInterrupted' }
         '^dur>=(\d+)$' { return "Filter::DurationAtLeast($($Matches[1]))" }
@@ -106,6 +109,8 @@ L '    /// All stacks of a buff are removed from an enemy (`EnemyDstBuffRemoveMe
 L '    EnemyDstBuffRemove,'
 L '    /// All stacks of a buff are removed from a player (`PlayerDstBuffRemoveMechanic`).'
 L '    PlayerDstBuffRemove,'
+L '    /// A direct hit of a player with any skill (`PlayerSrcAllHealthDamageHitsMechanic`); the filter names the species hit.'
+L '    PlayerSrcAllHit,'
 L '    /// A hit of a player with one of the skills (`PlayerSrcHealthDamageHitMechanic`).'
 L '    PlayerSrcHit,'
 L '    /// The start of an animated cast of one of the skills by a player (`PlayerCastStartMechanic`).'
@@ -164,6 +169,17 @@ L '    /// The cast was not interrupted.'
 L '    NotInterrupted,'
 L '    /// An agent of one of the species (the mechanic ids stay the skill or buff ids) is the target or the source.'
 L '    Species(Side, &''static [i64]),'
+L '    /// The target has (`present`) or has not a buff when the event happens, `delay` ms before it and within `window` ms around that time (`To.HasBuff`).'
+L '    TargetBuff {'
+L '        /// Buff id.'
+L '        buff: i64,'
+L '        /// Whether the buff has to be there.'
+L '        present: bool,'
+L '        /// How long before the event the buff is looked for, in ms.'
+L '        delay: i64,'
+L '        /// Window around that time, in ms (0 for the point in time).'
+L '        window: i64,'
+L '    },'
 L '    /// The target is of the species and has (`present`) or has not a buff `delay` ms before the event (`HasBuff`).'
 L '    SpeciesBuff {'
 L '        /// Species id.'
@@ -233,8 +249,12 @@ foreach ($item in ($items | Sort-Object Trigger)) {
         $code = $filterOf["$($r.Logic)|$($r.Type)|$($r.Short)"]
         if (-not $code) { continue }
     }
-    $base = if ($code -match '^dur') { 'dur' } elseif ($code -match '^applied=') { 'applied' } elseif ($code -match '^species:') { 'species' } elseif ($code -match '^speciesbuff:') { 'speciesbuff' } else { $code }
+    $base = if ($code -match '^dur') { 'dur' } elseif ($code -match '^applied=') { 'applied' } elseif ($code -match '^species:') { 'species' } elseif ($code -match '^speciesbuff:') { 'speciesbuff' } elseif ($code -match '^buff:') { 'buff' } else { $code }
+    # the stable species with negative ids (gadgets) are not known here, only the permanent embodiments
+    if ($code -match '^species:' -and (((($code -split '=')[1] -replace '&direct', '') -split ',') | Where-Object { [int]$_ -lt 0 -and ([int]$_ -gt -53 -or [int]$_ -lt -58) })) { continue }
     if ($allowed[$kind] -notcontains $base) { continue }
+    # the hits of all skills only count direct damage, which only that check says
+    if (($kind -eq 'PlayerSrcAllHit') -ne ($code -match '&direct')) { continue }
     # negative ids are gadget interactions and emotes, no animated casts
     if ($kind -eq 'PlayerCastStart' -and $r.Ids -match '-') { continue }
     $name = $item.Name.Replace('\', '\\').Replace('"', '\"')
