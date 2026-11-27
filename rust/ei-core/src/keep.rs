@@ -304,7 +304,7 @@ pub fn keep_events(
     if log_end_time > MAX_LOG_MS {
         return Err(KeepError::TooLong);
     }
-    let mut kept = Kept {
+    Ok(Kept {
         events: kept,
         trigger_id: id,
         map_id,
@@ -314,9 +314,7 @@ pub fn keep_events(
         version,
         agent_redirection: redirection,
         extensions,
-    };
-    crate::special::process(&mut kept);
-    Ok(kept)
+    })
 }
 
 /// `EvtcParser.IsValid`. Announcing records of supported extensions register the extension.
