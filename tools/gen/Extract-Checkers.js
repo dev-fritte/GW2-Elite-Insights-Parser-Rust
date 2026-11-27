@@ -43,7 +43,12 @@ const targetIds = new Map();
   const src = fs.readFileSync(path.join(root, '..', 'ParserHelpers/IDs/SpeciesIDs.cs'), 'utf8').replace(/\r/g, '');
   const start = src.indexOf('enum TargetID');
   const end = src.indexOf('\n    }', start);
-  for (const m of src.slice(start, end).matchAll(/^\s*(\w+)\s*=\s*(\d+)\s*,/gm)) targetIds.set(m[1], m[2]);
+  const consts = new Map();
+  for (const m of src.matchAll(/const int ([A-Za-z0-9_]+) *= *(-?[0-9]+);/g)) consts.set(m[1], m[2]);
+  for (const m of src.slice(start, end).matchAll(/^ *([A-Za-z0-9_]+) *= *(-?[0-9]+|SpeciesIDs[.][A-Za-z0-9_]+) *,/gm)) {
+    const v = m[2].startsWith('SpeciesIDs.') ? consts.get(m[2].slice(11)) : m[2];
+    if (v !== undefined) targetIds.set(m[1], v);
+  }
 }
 
 // numeric values of the skill and buff constants
@@ -69,6 +74,17 @@ function classify(chain) {
   if (checkers.length !== 1) return null;
   const [name, a] = checkers[0];
   let m;
+  // the remover is a player (or a minion of one), or the removed from agent is one
+  if ((m = /^[(][A-Za-z0-9_]+, *log[)] *=> *[A-Za-z0-9_]+[.](CreditedBy|By|To)[.]IsPlayer$/.exec(a))) return m[1] === 'To' ? 'toplayer' : 'byplayer';
+  // a direct hit on an agent of one or two species
+  if ((m = /^[(][A-Za-z0-9_]+, *log[)] *=> *[(]?[A-Za-z0-9_]+[.]To[.]IsSpecies[(]TargetID[.]([A-Za-z0-9_]+)[)](?: *[|][|] *[A-Za-z0-9_]+[.]To[.]IsSpecies[(]TargetID[.]([A-Za-z0-9_]+)[)])?[)]? *&& *[A-Za-z0-9_]+ is DirectHealthDamageEvent$/.exec(a))) {
+    const ids = [m[1], m[2]].filter(Boolean).map(n => targetIds.get(n));
+    if (ids.every(Boolean)) return 'species:to=' + ids.join(',') + '&direct';
+  }
+  // the target has (or has not) a buff when the event happens, possibly within a window
+  if ((m = /^[(][A-Za-z0-9_]+, *log[)] *=> *(!?) *[A-Za-z0-9_]+[.]To[.]HasBuff[(]log, *([A-Za-z0-9_]+), *[A-Za-z0-9_]+[.]Time( *- *(?:ParserHelper[.])?ServerDelayConstant)?(, *(?:ParserHelper[.])?ServerDelayConstant)?[)]$/.exec(a))) {
+    if (skillIds.has(m[2])) return 'buff:' + skillIds.get(m[2]) + ',' + (m[1] ? 'no' : 'has') + ',' + (m[3] ? 10 : 0) + ',' + (m[4] ? 10 : 0);
+  }
   // the target is of the species and has (or has not) a buff when the event happens
   if ((m = /^\(\w+,\s*log\)\s*=>\s*\w+\.To\.IsSpecies\(TargetID\.(\w+)\)\s*(?:&&|&)\s*(!?)\s*\w+\.To\.HasBuff\(log,\s*(\w+),\s*\w+\.Time(?:\s*-\s*(?:ParserHelper\.)?ServerDelayConstant)?\)$/.exec(a))) {
     if (targetIds.has(m[1]) && skillIds.has(m[3])) {
@@ -118,12 +134,21 @@ for (const file of walk(root)) {
       chain.push([mm[1], s.slice(o2 + 1, e2 - 1).replace(/\s+/g, ' ').trim()]);
       k = e2;
     }
-    // only a checker and build ranges may be added
-    if (chain.some(x => !/^Using(Checker|BuffChecker)$/.test(x[0]) && x[0] !== 'WithBuilds')) continue;
+    // only a checker, build ranges, the ignoring of the mechanic itself and sub mechanics that
+    // split the events by stability may be added
+    if (chain.some(x => !/^Using(Checker|BuffChecker|Ignored)$/.test(x[0]) && !['WithBuilds', 'WithStabilitySubMechanic'].includes(x[0]))) continue;
+    for (const [name, a] of chain) {
+      if (name !== 'WithStabilitySubMechanic') continue;
+      const sub = /^new SubMechanic[(].*? new *[(] *"([^"]*)".*, *(true|false)$/.exec(a);
+      if (!sub) continue;
+      const subKey = [path.basename(file, '.cs'), 'SubMechanic', sub[1]].join('	');
+      if (!seen.has(subKey)) seen.set(subKey, new Set());
+      seen.get(subKey).add('sub:' + short[1] + ':' + (sub[2] === 'true' ? 'stab' : 'nostab'));
+    }
     const filter = classify(chain);
     const key = [path.basename(file, '.cs'), m[1], short[1]].join('\t');
     if (!seen.has(key)) seen.set(key, new Set());
-    seen.get(key).add(filter || '');
+    if (m[1] !== 'SubMechanic') seen.get(key).add(filter || '');
   }
 }
 const lines = ['Logic\tType\tShort\tFilter'];

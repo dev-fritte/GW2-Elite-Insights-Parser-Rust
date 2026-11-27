@@ -3,30 +3,42 @@ Adina	PlayerDstHealthDamageHitMechanic	Perilous Pulse	nostab
 Adina	PlayerDstHealthDamageMechanic	S.Thrower	killed
 AetherbladeHideout	PlayerDstHealthDamageMechanic	Green.Dwn	downed
 AetherbladeHideout	PlayerDstHealthDamageMechanic	Spread.Dwn	downed
+AetherbladeHideout	SubMechanic	HrtPier.CC	sub:HrtPier.H:nostab
 AiKeeperOfThePeak	EnemyCastEndMechanic	Int.Glt.Mnp.	interrupted
 AiKeeperOfThePeak	EnemyCastEndMechanic	IntFear.Mnp.	interrupted
 AiKeeperOfThePeak	EnemyCastEndMechanic	IntSor.Mnp.	interrupted
 AiKeeperOfThePeak	PlayerDstHealthDamageMechanic	Mtr.H	downedorkilled
+AiKeeperOfThePeak	SubMechanic	L.Wnd.Burst	sub:Wnd.Brst.:nostab
 Arkk	EnemyCastEndMechanic	Pull CC Fail	dur>3200
 Arkk	EnemyCastEndMechanic	Pull CCed	dur<3200
 BanditTrio	PlayerDstBuffApplyMechanic	Blinded	species:by=16137
 BanditTrio	PlayerDstBuffApplyMechanic	Burning	species:by=16125
+BanditTrio	PlayerSrcBuffApplyMechanic	Hit Cage	species:to=-46
 BanditTrio	PlayerSrcBuffApplyMechanic	Targeted.B	species:to=16088
 BanditTrio	PlayerSrcHealthDamageHitMechanic	Beehive.H.B	species:to=16088
 Boneskinner	EnemyCastEndMechanic	D.Darkness	notinterrupted
 Boneskinner	EnemyCastEndMechanic	D.Torch	notinterrupted
 Boneskinner	EnemyCastEndMechanic	D.Wind	notinterrupted
+Cairn	SubMechanic	Green.C	sub:Std.Green:nostab
+Cairn	SubMechanic	Stab.Green.C	sub:Std.Green:stab
 ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Ground	damage
 ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Tremor	damage
 ConjuredAmalgamate	PlayerDstHealthDamageHitMechanic	Wall	damage
+ConjuredAmalgamate	SubMechanic	Stab.Slam	sub:Arm Slam:stab
 CosmicObservatory	AchievementEligibilityMechanic	DancStars.Achiv.K	kept
 CosmicObservatory	AchievementEligibilityMechanic	DancStars.Achiv.L	lost
 CosmicObservatory	EnemyDstBuffApplyMechanic	Planet Crash (Int)	species:to=25705
+CosmicObservatory	EnemyDstBuffRemoveSingleMechanic	DemAur.L	byplayer
 CosmicObservatory	PlayerDstBuffApplyMechanic	Sl.Fst.T	species:by=25705
 CosmicObservatory	PlayerSrcHealthDamageHitMechanic	PurLight.Dagda.C	species:to=25705
 CosmicObservatory	PlayerSrcHealthDamageHitMechanic	PurLight.Soul.C	species:to=26069
 DecimaTheStormsinger	AchievementEligibilityMechanic	BugDance.Achiv.K	kept
 DecimaTheStormsinger	AchievementEligibilityMechanic	BugDance.Achiv.L	lost
+DecimaTheStormsinger	PlayerDstHealthDamageHitMechanic	FluxInc.H	buff:74904,has,0,10
+DecimaTheStormsinger	PlayerDstHealthDamageHitMechanic	SparkAuraInc.H	buff:74659,has,0,10
+DecimaTheStormsinger	SubMechanic	Earthrend.CC	sub:Earthrend.H:nostab
+DecimaTheStormsinger	SubMechanic	SeisCrash.CC	sub:SeisCrash.H:nostab
+DecimaTheStormsinger	SubMechanic	SeisRepos.CC	sub:SeisRepos.H:nostab
 Deimos	EnemyCastEndMechanic	TP CC Fail	dur>=2200
 Deimos	EnemyCastEndMechanic	TP CCed	dur<2200
 Deimos	EnemyCastEndMechanic	Thief CC Fail	dur>=4400
@@ -39,6 +51,9 @@ Dhuum	PlayerDstBuffApplyMechanic	SupSpeed.Orb	species:by=19481
 Dhuum	PlayerDstHealthDamageHitMechanic	Shackles dmg	damage
 Ensolyss	EnemyCastEndMechanic	CC.E Fail	dur>=15260
 Ensolyss	EnemyCastEndMechanic	CCed	dur<15260
+Escort	PlayerDstHealthDamageMechanic	Mine.H	species:by=-35
+FractalLogic	PlayerDstBuffApplyMechanic	ToxSick.HitBy	byplayer
+FractalLogic	PlayerSrcBuffApplyMechanic	ToxSick.HitTo	toplayer
 FraenirOfJormag	PlayerDstHealthDamageHitMechanic	FrozenMissile.CC	nostab
 FraenirOfJormag	PlayerDstHealthDamageHitMechanic	Ice Shock Wave	nostab
 FraenirOfJormag	PlayerDstHealthDamageHitMechanic	IceArmSwing.CC	nostab
@@ -65,11 +80,22 @@ GuardiansGlade	AchievementEligibilityMechanic	Achiv.Sand.K	kept
 GuardiansGlade	AchievementEligibilityMechanic	Achiv.Sand.L	lost
 GuardiansGlade	EnemySrcHealthDamageMechanic	Ate Artifact	species:to=27663
 GuardiansGlade	EnemySrcHealthDamageMechanic	Ate Croc	species:to=27658
+GuardiansGlade	EnemySrcHealthDamageMechanic	Ate Player	toplayer
+GuardiansGlade	SubMechanic	ClawSlam.CC	sub:ClawSlam.H:nostab
+GuardiansGlade	SubMechanic	CrocTackle.CC	sub:CrocTackle.H:nostab
+GuardiansGlade	SubMechanic	LightStk.CC	sub:LightStk.H:nostab
+GuardiansGlade	SubMechanic	Stomp.CC	sub:Stomp.H:nostab
+GuardiansGlade	SubMechanic	Tornado.CC	sub:Tornado.H:nostab
 HarvestTemple	AchievementEligibilityMechanic	NopeRopes.Achiv.K	kept
 HarvestTemple	AchievementEligibilityMechanic	NopeRopes.Achiv.L	lost
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Kick.H	nostab
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Scream.G.CC	nostab
 HarvestTemple	PlayerDstHealthDamageHitMechanic	Stomp.CC	nostab
+HarvestTemple	PlayerSrcAllHealthDamageHitsMechanic	Orb Push	species:to=-23,23956&direct
+HarvestTemple	SubMechanic	Charge.CC	sub:Charge.H:nostab
+HarvestTemple	SubMechanic	GlaSlam.CC	sub:GlaSlam.H:nostab
+IcebroodConstruct	SubMechanic	ArmSwing.CC	sub:A.Swing:nostab
+IcebroodConstruct	SubMechanic	IceFlail.CC	sub:I.Flail:nostab
 KainengOverlook	AchievementEligibilityMechanic	MostResi.Achiv.G	kept
 KainengOverlook	AchievementEligibilityMechanic	MostResi.Achiv.N.G	lost
 KainengOverlook	AchievementEligibilityMechanic	TextReflx.Achiv.K	kept
@@ -77,6 +103,11 @@ KainengOverlook	AchievementEligibilityMechanic	TextReflx.Achiv.L	lost
 KainengOverlook	PlayerDstBuffApplyMechanic	Fixated.E	species:by=24261,25236
 KainengOverlook	PlayerDstBuffApplyMechanic	Fixated.M	species:by=24254,25280
 KainengOverlook	PlayerDstHealthDamageMechanic	Bomb.D	downed
+KeepConstruct	PlayerDstHealthDamageHitMechanic	BR.Orb	buff:35091,no,0,0
+KeepConstruct	PlayerDstHealthDamageHitMechanic	BW.Orb	buff:35109,no,0,0
+KeepConstruct	PlayerDstHealthDamageHitMechanic	GR.Orb	buff:35091,has,0,0
+KeepConstruct	PlayerDstHealthDamageHitMechanic	GW.Orb	buff:35109,has,0,0
+KeepConstruct	PlayerSrcAllHealthDamageHitsMechanic	Core Hit	species:to=16261&direct
 MursaatOverseer	PlayerDstBuffApplyMechanic	Protect	applied=1000
 NexusOfEternity	AchievementEligibilityMechanic	TrueVisionary.Achiv.K	kept
 NexusOfEternity	AchievementEligibilityMechanic	TrueVisionary.Achiv.L	lost
@@ -86,6 +117,7 @@ NexusOfEternity	EnemySrcEnemyDstBuffApplyMechanic	Emp.St	species:by=28017
 NexusOfEternity	EnemySrcEnemyDstBuffApplyMechanic	Emp.Sw	species:by=28107
 NexusOfEternity	EnemySrcMissileMechanic	Asp.OrbGen	species:by=28106,28017,28033,28107
 NexusOfEternity	PlayerDstHealthDamageMechanic	WorldpierV.K	killed
+NexusOfEternity	SubMechanic	AnnOrb.Shck.KD	sub:AnnOrb.Shck.H:nostab
 OldLionsCourt	AchievementEligibilityMechanic	AethAver.Achiv.K	kept
 OldLionsCourt	AchievementEligibilityMechanic	AethAver.Achiv.L	lost
 OldLionsCourt	PlayerDstBuffApplyMechanic	Fix.Arse.A	species:by=25415,25416
@@ -156,12 +188,18 @@ TempleOfFebe	EnemyDstBuffApplyMechanic	Gluttony.K	speciesbuff:25677,70687,no,0
 TempleOfFebe	EnemyDstBuffApplyMechanic	Malice.K	speciesbuff:25700,70621,no,0
 TempleOfFebe	EnemyDstBuffApplyMechanic	Rage.K	speciesbuff:25686,70181,no,0
 TempleOfFebe	EnemyDstBuffApplyMechanic	Regret.K	speciesbuff:26049,70544,no,0
+TempleOfFebe	PlayerDstBuffRemoveMechanic	EnvGaze.Strip	species:by=25989,25967,-57
 TempleOfFebe	PlayerDstHealthDamageHitMechanic	EnrSmash.D	downed
 TwinLargos	PlayerDstHealthDamageHitMechanic	Wave	nostab
 UraTheSteamshrieker	AchievementEligibilityMechanic	Achiv.Hop.K	kept
 UraTheSteamshrieker	AchievementEligibilityMechanic	Achiv.Hop.L	lost
 UraTheSteamshrieker	PlayerDstHealthDamageHitMechanic	FullSteam.H	nostab
 UraTheSteamshrieker	PlayerDstHealthDamageHitMechanic	StnSlam.CC	nostab
+UraTheSteamshrieker	PlayerSrcBuffRemoveFromMechanic	Dispel.P	toplayer
+UraTheSteamshrieker	PlayerSrcBuffRemoveFromMechanic	Dispel.Sulf	species:to=-63
+UraTheSteamshrieker	PlayerSrcBuffRemoveFromMechanic	Dispel.Titn	species:to=26741,-93
+UraTheSteamshrieker	PlayerSrcBuffRemoveFromMechanic	Dispel.Toxc	species:to=-62
+UraTheSteamshrieker	SubMechanic	UraJump.CC	sub:UraJump.H:nostab
 ValeGuardian	EnemyCastEndMechanic	CC.VG Fail	dur>8544
 ValeGuardian	EnemyCastEndMechanic	CCed.VG	dur<=8544
 WhisperingShadow	AchievementEligibilityMechanic	Shatterstep.Achiv.K	kept

@@ -26,15 +26,28 @@ $kinds = @{
     'PlayerSrcHealthDamageHitMechanic' = 'PlayerSrcHit'
     'PlayerCastStartMechanic' = 'PlayerCastStart'
     'PlayerSrcBuffApplyMechanic' = 'PlayerSrcBuffApply'
+    'PlayerSrcBuffRemoveSingleFromMechanic' = 'PlayerSrcBuffRemoveSingleFrom'
+    'PlayerSrcBuffRemoveFromMechanic' = 'PlayerSrcBuffRemoveFrom'
+    'EnemyDstBuffRemoveSingleMechanic' = 'EnemyDstBuffRemoveSingle'
+    'PlayerSrcAllHealthDamageHitsMechanic' = 'PlayerSrcAllHit'
+    'PlayerDstEffectMechanic' = 'PlayerDstEffect'
+    'PlayerSrcEffectMechanic' = 'PlayerSrcEffect'
+    'EnemySrcEffectMechanic' = 'EnemySrcEffect'
 }
+# the effect mechanics list GUIDs instead of ids and are only enabled by effect data
+$effectKinds = @('PlayerDstEffect', 'PlayerSrcEffect', 'EnemySrcEffect')
 # the filters each kind can evaluate ('dur' stands for the duration comparisons)
 $allowed = @{
-    'PlayerDstHit' = @('', 'nostab', 'damage', 'species')
+    'PlayerDstHit' = @('', 'nostab', 'damage', 'species', 'buff')
     'PlayerDstBuffApply' = @('', 'applied', 'species')
     'PlayerSrcBuffApply' = @('', 'species')
+    'PlayerSrcBuffRemoveSingleFrom' = @('')
+    'PlayerSrcBuffRemoveFrom' = @('toplayer')
+    'EnemyDstBuffRemoveSingle' = @('byplayer')
+    'PlayerSrcAllHit' = @('species')
     'Spawn' = @('')
-    'EnemyDstBuffRemove' = @('')
-    'PlayerDstBuffRemove' = @('')
+    'EnemyDstBuffRemove' = @('', 'species')
+    'PlayerDstBuffRemove' = @('', 'species')
     'PlayerSrcHit' = @('', 'species')
     'PlayerCastStart' = @('', 'dur', 'interrupted', 'notinterrupted')
     'PlayerDstDamage' = @('killed', 'downed', 'downedorkilled', 'species')
@@ -42,6 +55,9 @@ $allowed = @{
     'EnemyCastEnd' = @('', 'dur', 'interrupted', 'notinterrupted')
     'EnemyDstBuffApply' = @('', 'species', 'speciesbuff')
     'Achievement' = @('lost', 'kept')
+    'PlayerDstEffect' = @('')
+    'PlayerSrcEffect' = @('')
+    'EnemySrcEffect' = @('')
 }
 $filterOf = @{}
 foreach ($f in (Import-Csv -Delimiter "`t" -LiteralPath $Filters -Encoding UTF8)) {
@@ -58,8 +74,11 @@ function Get-FilterExpr([string]$code) {
         '^downed$' { return 'Filter::Downed' }
         '^downedorkilled$' { return 'Filter::DownedOrKilled' }
         '^applied=(\d+)$' { return "Filter::AppliedDuration($($Matches[1]))" }
-        '^species:(to|by)=([\d,]+)$' { return "Filter::Species(Side::$(if ($Matches[1] -eq 'to') { 'To' } else { 'By' }), &[$($Matches[2])])" }
+        '^species:(to|by)=([-0-9,]+)(&direct)?$' { return "Filter::Species(Side::$(if ($Matches[1] -eq 'to') { 'To' } else { 'By' }), &[$($Matches[2])])" }
         '^speciesbuff:(\d+),(\d+),(has|no),(\d+)$' { return "Filter::SpeciesBuff { species: $($Matches[1]), buff: $($Matches[2]), present: $(if ($Matches[3] -eq 'has') { 'true' } else { 'false' }), delay: $($Matches[4]) }" }
+        '^buff:([0-9]+),(has|no),([0-9]+),([0-9]+)$' { return "Filter::TargetBuff { buff: $($Matches[1]), present: $(if ($Matches[2] -eq 'has') { 'true' } else { 'false' }), delay: $($Matches[3]), window: $($Matches[4]) }" }
+        '^byplayer$' { return 'Filter::ByPlayer' }
+        '^toplayer$' { return 'Filter::ToPlayer' }
         '^interrupted$' { return 'Filter::Interrupted' }
         '^notinterrupted$' { return 'Filter::NotInterrupted' }
         '^dur>=(\d+)$' { return "Filter::DurationAtLeast($($Matches[1]))" }
@@ -98,12 +117,26 @@ L '    /// All stacks of a buff are removed from an enemy (`EnemyDstBuffRemoveMe
 L '    EnemyDstBuffRemove,'
 L '    /// All stacks of a buff are removed from a player (`PlayerDstBuffRemoveMechanic`).'
 L '    PlayerDstBuffRemove,'
+L '    /// One stack of a buff a player removed, counted per stack (`PlayerSrcBuffRemoveSingleFromMechanic`).'
+L '    PlayerSrcBuffRemoveSingleFrom,'
+L '    /// All stacks of a buff a player removed (`PlayerSrcBuffRemoveFromMechanic`).'
+L '    PlayerSrcBuffRemoveFrom,'
+L '    /// One stack of a buff removed from an enemy, counted per stack (`EnemyDstBuffRemoveSingleMechanic`).'
+L '    EnemyDstBuffRemoveSingle,'
+L '    /// A direct hit of a player with any skill (`PlayerSrcAllHealthDamageHitsMechanic`); the filter names the species hit.'
+L '    PlayerSrcAllHit,'
 L '    /// A hit of a player with one of the skills (`PlayerSrcHealthDamageHitMechanic`).'
 L '    PlayerSrcHit,'
 L '    /// The start of an animated cast of one of the skills by a player (`PlayerCastStartMechanic`).'
 L '    PlayerCastStart,'
 L '    /// One of the buffs a player applied (`PlayerSrcBuffApplyMechanic`).'
 L '    PlayerSrcBuffApply,'
+L '    /// An effect located at a player (`PlayerDstEffectMechanic`).'
+L '    PlayerDstEffect,'
+L '    /// An effect a player created (`PlayerSrcEffectMechanic`).'
+L '    PlayerSrcEffect,'
+L '    /// An effect an enemy or the environment created (`EnemySrcEffectMechanic`).'
+L '    EnemySrcEffect,'
 L '}'
 L ''
 L '/// The agent of the event whose species is checked.'
@@ -146,10 +179,25 @@ L '    /// The buff was applied for exactly so long in ms (`AppliedDuration == n
 L '    AppliedDuration(i64),'
 L '    /// The cast was interrupted.'
 L '    Interrupted,'
+L '    /// The agent that removed the buff is a player (`CreditedBy.IsPlayer`).'
+L '    ByPlayer,'
+L '    /// The agent the buff was removed from is a player (`To.IsPlayer`).'
+L '    ToPlayer,'
 L '    /// The cast was not interrupted.'
 L '    NotInterrupted,'
 L '    /// An agent of one of the species (the mechanic ids stay the skill or buff ids) is the target or the source.'
 L '    Species(Side, &''static [i64]),'
+L '    /// The target has (`present`) or has not a buff when the event happens, `delay` ms before it and within `window` ms around that time (`To.HasBuff`).'
+L '    TargetBuff {'
+L '        /// Buff id.'
+L '        buff: i64,'
+L '        /// Whether the buff has to be there.'
+L '        present: bool,'
+L '        /// How long before the event the buff is looked for, in ms.'
+L '        delay: i64,'
+L '        /// Window around that time, in ms (0 for the point in time).'
+L '        window: i64,'
+L '    },'
 L '    /// The target is of the species and has (`present`) or has not a buff `delay` ms before the event (`HasBuff`).'
 L '    SpeciesBuff {'
 L '        /// Species id.'
@@ -174,33 +222,71 @@ L '    /// The check the mechanic adds.'
 L '    pub filter: Filter,'
 L '    /// Skill or buff ids.'
 L '    pub ids: &''static [i64],'
+L '    /// GUIDs of the effects (effect mechanics only), as in `effect_guids`.'
+L '    pub guids: &''static [[u8; 16]],'
 L '    /// Short name, as in the JSON.'
 L '    pub name: &''static str,'
 L '    /// First and last (exclusive) GW2 build the mechanic is available in.'
 L '    pub builds: (u64, u64),'
 L '    /// First and last (exclusive) arcdps build the mechanic is available in.'
 L '    pub evtc_builds: (i32, i32),'
+L '    /// For a sub mechanic: whether the affected player has (`Some(true)`) or has not stability 10 ms before.'
+L '    pub stability: Option<bool>,'
 L '}'
 L ''
 L '/// All mechanics, ordered by trigger id.'
 L 'pub const MECHANICS: &[Mechanic] = &['
 $n = 0
-foreach ($r in ($rows | Sort-Object { [int]$_.Trigger })) {
-    if (-not $kinds.ContainsKey($r.Type)) { continue }
-    if ($r.Subs -ne '0' -or $r.Clamper -ne '0' -or $r.Enables -ne '0' -or $r.Minions -ne '0' -or $r.Ignored -ne '0') { continue }
+# the mechanics themselves and the sub mechanics that split their events by stability
+$items = New-Object System.Collections.ArrayList
+foreach ($r in $rows) {
+    if ($kinds.ContainsKey($r.Type)) {
+        [void]$items.Add([pscustomobject]@{ Row = $r; Name = $r.Short; Stab = 'none'; Trigger = [int]$r.Trigger })
+    } elseif ($r.Type -eq 'SubMechanic') {
+        $info = $filterOf["$($r.Logic)|SubMechanic|$($r.Short)"]
+        if ($info -notmatch '^sub:(.*):(stab|nostab)$') { continue }
+        $parent = $rows | Where-Object { $_.Trigger -eq $r.Trigger -and $_.Logic -eq $r.Logic -and $_.Short -eq $Matches[1] -and $kinds.ContainsKey($_.Type) } | Select-Object -First 1
+        if ($parent) {
+            [void]$items.Add([pscustomobject]@{ Row = $parent; Name = $r.Short; Stab = $Matches[2]; Trigger = [int]$r.Trigger })
+        }
+    }
+}
+foreach ($item in ($items | Sort-Object Trigger)) {
+    $r = $item.Row
+    $stab = $item.Stab
     $kind = $kinds[$r.Type]
+    $isEffect = $effectKinds -contains $kind
+    # an effect mechanic's only condition is that the log has effect data
+    $enables = if ($isEffect) { '1' } else { '0' }
+    if ($r.Clamper -ne '0' -or $r.Enables -ne $enables -or $r.Minions -ne '0') { continue }
+    # a mechanic that is ignored only shows through its sub mechanics
+    if ($stab -eq 'none' -and $r.Ignored -ne '0') { continue }
     $code = ''
     if ($r.Checkers -ne '0') {
         if ($r.Checkers -ne '1') { continue }
         $code = $filterOf["$($r.Logic)|$($r.Type)|$($r.Short)"]
         if (-not $code) { continue }
     }
-    $base = if ($code -match '^dur') { 'dur' } elseif ($code -match '^applied=') { 'applied' } elseif ($code -match '^species:') { 'species' } elseif ($code -match '^speciesbuff:') { 'speciesbuff' } else { $code }
+    $base = if ($code -match '^dur') { 'dur' } elseif ($code -match '^applied=') { 'applied' } elseif ($code -match '^species:') { 'species' } elseif ($code -match '^speciesbuff:') { 'speciesbuff' } elseif ($code -match '^buff:') { 'buff' } else { $code }
+    # the stable species with negative ids (gadgets) are not known here, only the permanent embodiments
+    if ($code -match '^species:' -and (((($code -split '=')[1] -replace '&direct', '') -split ',') | Where-Object { [int]$_ -lt 0 -and ([int]$_ -gt -53 -or [int]$_ -lt -58) })) { continue }
     if ($allowed[$kind] -notcontains $base) { continue }
+    # the hits of all skills only count direct damage, which only that check says
+    if (($kind -eq 'PlayerSrcAllHit') -ne ($code -match '&direct')) { continue }
     # negative ids are gadget interactions and emotes, no animated casts
     if ($kind -eq 'PlayerCastStart' -and $r.Ids -match '-') { continue }
-    $name = $r.Short.Replace('\', '\\').Replace('"', '\"')
-    L ("    Mechanic {{ trigger_id: {0}, kind: Kind::{1}, filter: {8}, ids: &[{2}], name: ""{3}"", builds: ({4}, {5}), evtc_builds: ({6}, {7}) }}," -f $r.Trigger, $kind, $r.Ids, $name, $r.MinBuild, $r.MaxBuild, $r.MinEvtc, $r.MaxEvtc, (Get-FilterExpr $code))
+    $name = $item.Name.Replace('\', '\\').Replace('"', '\"')
+    $ids = $r.Ids
+    $guids = ''
+    if ($isEffect) {
+        # the 16 bytes in reading order of the 32 hex digits, as in ei-data's effect_guids
+        $guids = (($r.Ids -split ',') | ForEach-Object {
+            $hex = $_.Replace('-', '')
+            '[' + ((0..15 | ForEach-Object { '0x' + $hex.Substring(2 * $_, 2).ToUpper() }) -join ', ') + ']'
+        }) -join ', '
+        $ids = ''
+    }
+    L ("    Mechanic {{ trigger_id: {0}, kind: Kind::{1}, filter: {8}, ids: &[{2}], guids: &[{9}], name: ""{3}"", builds: ({4}, {5}), evtc_builds: ({6}, {7}), stability: {10} }}," -f $r.Trigger, $kind, $ids, $name, $r.MinBuild, $r.MaxBuild, $r.MinEvtc, $r.MaxEvtc, (Get-FilterExpr $code), $guids, $(if ($stab -eq 'stab') { 'Some(true)' } elseif ($stab -eq 'nostab') { 'Some(false)' } else { 'None' }))
     $n++
 }
 L '];'

@@ -311,13 +311,18 @@ pub fn analyze_damage(
     let evtc = Evtc::parse(data)?;
     let header = evtc.header();
     let records: Vec<_> = evtc.events().collect();
-    let kept = keep_events(
+    let mut kept = keep_events(
         &records,
         header.trigger_id(),
         header.build(),
         KeepSettings::default(),
     )?;
+    crate::encounter::resolve_orphans(&mut kept);
     let players = find_players(evtc.agents(), &kept, &api.specs, false);
+    crate::special::process(
+        &mut kept,
+        &players.iter().map(|p| p.address).collect::<Vec<_>>(),
+    );
     let timing = timing.unwrap_or_else(|| core_timing(&kept, &evtc, &players));
     let ctx = crate::buff_events::LogContext {
         kept: &kept,

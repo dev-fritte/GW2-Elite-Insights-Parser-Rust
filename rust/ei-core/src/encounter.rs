@@ -25,6 +25,8 @@ const ICEBROOD_REWARDS: [u64; 8] = [993, 1035, 1028, 1091, 1032, 1007, 1052, 103
 const OLD_RAID_REWARD_2: i32 = 60_685;
 /// `RewardTypes.CurrentRaidReward`.
 const CURRENT_RAID_REWARD: i32 = 22_797;
+/// `RewardTypes.PostEoDRaidEncounterReward`: the reward of the raid encounters after End of Dragons.
+const POST_EOD_RAID_ENCOUNTER_REWARD: i32 = 29_453;
 /// `ParserHelper.ServerDelayConstant`.
 const SERVER_DELAY: i64 = 10;
 /// `TargetID.Instance`.
@@ -58,6 +60,13 @@ impl Agent {
 
 /// First and last time of every agent address in the kept records (`UpdateAgentData`).
 pub(crate) fn spans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
+    let mut spans = spans_without_orphans(kept);
+    assign_orphans(kept, &mut spans);
+    spans
+}
+
+/// The times of the agents from the records that name them by address.
+fn spans_without_orphans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
     let mut spans: HashMap<u64, (i64, i64)> = HashMap::new();
     let mut touch = |address: u64, time: i64| {
@@ -74,6 +83,74 @@ pub(crate) fn spans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
         }
     }
     spans
+}
+
+/// Records that name an agent only by its instance id (no address) belong to the agent with that
+/// instance id that is known around that time (`orphanedSrcInstidCombatItems` of
+/// `CompleteAgentsAndLogData`); they stretch the times the agent is known.
+fn assign_orphans(kept: &Kept, spans: &mut HashMap<u64, (i64, i64)>) {
+    orphan_owners(kept, spans);
+}
+
+/// Gives the records that name an agent only by its instance id the address of that agent
+/// (`OverrideSrcAgent` and `OverrideDstAgent` of `CompleteAgentsAndLogData`).
+pub fn resolve_orphans(kept: &mut Kept) {
+    let mut spans = spans_without_orphans(kept);
+    let owners = orphan_owners(kept, &mut spans);
+    for (index, is_src, address) in owners {
+        let e = &mut kept.events[index];
+        if is_src {
+            e.src_agent = address;
+        } else {
+            e.dst_agent = address;
+        }
+    }
+}
+
+/// The agent every orphaned record belongs to, as (record index, is the source, address), and the
+/// times of the agents stretched by them.
+fn orphan_owners(kept: &Kept, spans: &mut HashMap<u64, (i64, i64)>) -> Vec<(usize, bool, u64)> {
+    let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+    // the instance id of every agent: the first one its records carry
+    let mut instids: HashMap<u64, u16> = HashMap::new();
+    let mut src_orphans = Vec::new();
+    let mut dst_orphans = Vec::new();
+    for (index, e) in kept.events.iter().enumerate() {
+        if src_is_agent(e.state_change) && e.src_instid != 0 {
+            if e.src_agent == 0 {
+                src_orphans.push((index, true, e.time, e.src_instid));
+            } else {
+                instids.entry(redirect(e.src_agent)).or_insert(e.src_instid);
+            }
+        }
+        if dst_is_agent(e.state_change) && e.dst_instid != 0 {
+            if e.dst_agent == 0 {
+                dst_orphans.push((index, false, e.time, e.dst_instid));
+            } else {
+                instids.entry(redirect(e.dst_agent)).or_insert(e.dst_instid);
+            }
+        }
+    }
+    let mut owners = Vec::new();
+    for (index, is_src, time, instid) in src_orphans.into_iter().chain(dst_orphans) {
+        let mut candidates: Vec<(u64, i64, i64)> = instids
+            .iter()
+            .filter(|&(_, &i)| i == instid)
+            .filter_map(|(a, _)| spans.get(a).map(|&(first, last)| (*a, first, last)))
+            .collect();
+        candidates.sort_by_key(|c| (c.1, c.0));
+        let aware = |&(_, first, last): &(u64, i64, i64), t: i64| (first..=last).contains(&t);
+        if let Some(found) = candidates
+            .iter()
+            .find(|c| aware(c, time - 300) || aware(c, time + 300))
+            && let Some(span) = spans.get_mut(&found.0)
+        {
+            span.0 = span.0.min(time);
+            span.1 = span.1.max(time);
+            owners.push((index, is_src, found.0));
+        }
+    }
+    owners
 }
 
 /// Non player characters of one species, ordered by first appearance.
@@ -800,7 +877,7 @@ fn bandit_trio_offset(c: &Ctx<'_>) -> Result<i64, MissingKeyActors> {
 }
 
 /// The GUID an `ID_TO_GUID` record carries, in the byte order of `effect_guids`.
-fn record_guid(e: &evtc_ingest::CombatRecord) -> [u8; 16] {
+pub(crate) fn record_guid(e: &evtc_ingest::CombatRecord) -> [u8; 16] {
     let mut bytes = [0u8; 16];
     bytes[..8].copy_from_slice(&e.src_agent.to_le_bytes());
     bytes[8..].copy_from_slice(&e.dst_agent.to_le_bytes());
@@ -1052,6 +1129,20 @@ fn generic_end(c: &Ctx<'_>, target: &Agent, player_addresses: &[u64]) -> End {
     if chest_position(kept.trigger_id).is_some()
         && let Some(reward) = c.first_with(|e| {
             e.state_change == sc::REWARD && e.value == CURRENT_RAID_REWARD && e.time - c.offset > 0
+        })
+    {
+        return End {
+            success: true,
+            time: reward.time,
+        };
+    }
+    // the raid encounters of Secret of the Obscure end with their own reward record
+    // (RaidEncounterLogic.CheckPostEODRewardSuccess)
+    if matches!(kept.trigger_id, 25_989 | 25_705)
+        && let Some(reward) = c.first_with(|e| {
+            e.state_change == sc::REWARD
+                && e.value == POST_EOD_RAID_ENCOUNTER_REWARD
+                && e.time - c.offset > 0
         })
     {
         return End {
@@ -1670,6 +1761,78 @@ pub fn challenge_mode(kept: &Kept, table: AgentTable<'_>) -> bool {
     }
 }
 
+/// The positions of the recording player (`RegroupSameAgentsAndDetermineTeams`): when they are
+/// known, an agent of an instance id is only the same one again if the player was far from its
+/// last or first position.
+struct PointOfView {
+    /// Positions of the player: time and x, y, z.
+    path: Vec<(i64, [f32; 3])>,
+    /// First and last position of every agent.
+    ends: HashMap<u64, ([f32; 3], [f32; 3])>,
+}
+
+impl PointOfView {
+    /// `4980`: the render range of 5000 minus 20.
+    const DISTANCE: f32 = 4980.0;
+
+    fn new(kept: &Kept) -> Self {
+        let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
+        let player = kept
+            .events
+            .iter()
+            .find(|e| e.state_change == sc::POINT_OF_VIEW)
+            .map(|e| redirect(e.src_agent));
+        let mut path = Vec::new();
+        let mut ends: HashMap<u64, ([f32; 3], [f32; 3])> = HashMap::new();
+        for e in kept
+            .events
+            .iter()
+            .filter(|e| e.state_change == sc::POSITION && e.src_agent != 0)
+        {
+            let point = [
+                f32::from_bits((e.dst_agent & 0xFFFF_FFFF) as u32),
+                f32::from_bits((e.dst_agent >> 32) as u32),
+                f32::from_bits(e.value.cast_unsigned()),
+            ];
+            let address = redirect(e.src_agent);
+            if Some(address) == player {
+                path.push((e.time, point));
+            }
+            ends.entry(address)
+                .and_modify(|(_, last)| *last = point)
+                .or_insert((point, point));
+        }
+        Self { path, ends }
+    }
+
+    /// Whether the positions of the player are used at all.
+    fn is_active(&self) -> bool {
+        !self.path.is_empty()
+    }
+
+    fn distance(a: [f32; 3], b: [f32; 3]) -> f32 {
+        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+    }
+
+    /// Whether `next` is the previous agent again: the player was far from where it ended, or far
+    /// from where `next` begins.
+    fn apart(&self, previous: &Target, next: &Target, offset: i64) -> bool {
+        if let Some((_, last)) = self.ends.get(&previous.address)
+            && let Some((_, point)) = self.path.iter().find(|(t, _)| *t > previous.last + offset)
+            && Self::distance(*point, *last) > Self::DISTANCE
+        {
+            return true;
+        }
+        if let Some((first, _)) = self.ends.get(&next.address)
+            && let Some((_, point)) = self.path.iter().rfind(|(t, _)| *t < next.first + offset)
+            && Self::distance(*point, *first) > Self::DISTANCE
+        {
+            return true;
+        }
+        false
+    }
+}
+
 /// Files a regrouped group of agents: a single agent keeps its place, a merged one is new.
 fn flush(
     group: Option<(usize, Target, usize)>,
@@ -1960,12 +2123,12 @@ pub(crate) fn species_first_seen(kept: &Kept, table: AgentTable<'_>, id: i64) ->
 
 /// The species of every non player character and gadget by address.
 #[must_use]
-pub(crate) fn species_by_address(table: AgentTable<'_>) -> HashMap<u64, u32> {
+pub(crate) fn species_by_address(table: AgentTable<'_>) -> HashMap<u64, i64> {
     table
         .iter()
         .filter_map(|a| match agent_kind(a) {
-            AgentKind::Npc => Some((a.address(), a.profession())),
-            AgentKind::Gadget => Some((a.address(), a.profession() & 0xFFFF)),
+            AgentKind::Npc => Some((a.address(), i64::from(a.profession()))),
+            AgentKind::Gadget => Some((a.address(), i64::from(a.profession() & 0xFFFF))),
             _ => None,
         })
         .collect()
@@ -2032,6 +2195,46 @@ pub fn species_first_times(kept: &Kept, table: AgentTable<'_>, offset: i64, id: 
         .into_iter()
         .map(|a| a.first - offset)
         .collect()
+}
+
+/// The embodiments that appear together with Cerus become permanent ones, a species of their own
+/// (`TempleOfFebe.EIEvtcParse`: the first agent of each embodiment species that first appears
+/// within 50 ms of Cerus). Address to the negative species id.
+fn permanent_embodiments(
+    kept: &Kept,
+    table: AgentTable<'_>,
+    spans: &HashMap<u64, (i64, i64)>,
+) -> HashMap<u64, i32> {
+    use species::target_id as id;
+    let mut out = HashMap::new();
+    if i32::from(kept.trigger_id) != id::CERUS {
+        return out;
+    }
+    let Some(cerus) = species_agents(table, spans, 25_989)
+        .first()
+        .map(|a| a.first)
+    else {
+        return out;
+    };
+    for (embodiment, permanent) in [
+        (id::EMBODIMENT_OF_GLUTTONY, -53),
+        (id::EMBODIMENT_OF_RAGE, -54),
+        (id::EMBODIMENT_OF_DESPAIR, -55),
+        (id::EMBODIMENT_OF_REGRET, -56),
+        (id::EMBODIMENT_OF_ENVY, -57),
+        (id::EMBODIMENT_OF_MALICE, -58),
+    ] {
+        let Ok(embodiment) = u32::try_from(embodiment) else {
+            continue;
+        };
+        if let Some(agent) = species_agents(table, spans, embodiment)
+            .iter()
+            .find(|a| (cerus - a.first).abs() < 50)
+        {
+            out.insert(agent.address, permanent);
+        }
+    }
+    out
 }
 
 /// The targets of the encounter: the agents of the species its logic lists, ordered by first
@@ -2103,6 +2306,8 @@ pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
             .copied()
             .unwrap_or(i64::MIN)
     };
+    let permanent = permanent_embodiments(kept, table, &spans);
+    let pov = PointOfView::new(kept);
     // agents in the order of the agent table, like C# lists them before it sorts
     let mut candidates: Vec<(Target, u16, String, u16)> = Vec::new();
     for agent in table.iter() {
@@ -2114,6 +2319,7 @@ pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
         let Ok(species) = i32::try_from(species) else {
             continue;
         };
+        let species = permanent.get(&agent.address()).copied().unwrap_or(species);
         let Some(&(first, last)) = spans.get(&agent.address()) else {
             continue;
         };
@@ -2153,6 +2359,7 @@ pub fn log_targets(kept: &Kept, table: AgentTable<'_>, offset: i64) -> Vec<Targe
                     && p.2 == cand.2
                     && p.3 == cand.3
                     && group_window == window(&cand.0)
+                    && (!pov.is_active() || pov.apart(&p.0, &cand.0, offset))
             });
             if let (Some((_, g, count)), true) = (&mut group, same) {
                 g.first = g.first.min(cand.0.first);
