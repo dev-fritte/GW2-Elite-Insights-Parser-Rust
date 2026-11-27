@@ -3,6 +3,7 @@
 use crate::generated::state_change as sc;
 use crate::keep::Kept;
 use crate::offense::classify;
+use crate::rules::{dst_is_agent, src_is_agent};
 use std::collections::{HashMap, HashSet};
 
 /// `SkillIDs.FanaticalResilience`.
@@ -144,6 +145,31 @@ fn redirect_incoming_damage(kept: &mut Kept, buff: u32, players: &[u64]) {
         })
         .collect();
     let redirection = kept.agent_redirection.clone();
+    // everything else that involves the player is copied to the stand-in
+    let mut copies = Vec::new();
+    for &(player, start, end, stand_in) in &windows {
+        for e in &kept.events {
+            if e.state_change == sc::COMBAT || e.time < start || e.time > end {
+                continue;
+            }
+            let from_player = src_is_agent(e.state_change)
+                && e.src_agent != 0
+                && *redirection.get(&e.src_agent).unwrap_or(&e.src_agent) == player;
+            let to_player = dst_is_agent(e.state_change)
+                && e.dst_agent != 0
+                && *redirection.get(&e.dst_agent).unwrap_or(&e.dst_agent) == player;
+            if from_player || to_player {
+                let mut copy = *e;
+                if to_player {
+                    copy.dst_agent = stand_in;
+                }
+                if from_player {
+                    copy.src_agent = stand_in;
+                }
+                copies.push(copy);
+            }
+        }
+    }
     for e in &mut kept.events {
         if e.state_change != sc::COMBAT || e.dst_agent == 0 {
             continue;
@@ -155,5 +181,9 @@ fn redirect_incoming_damage(kept: &mut Kept, buff: u32, players: &[u64]) {
         {
             e.dst_agent = stand_in;
         }
+    }
+    if !copies.is_empty() {
+        kept.events.extend(copies);
+        kept.events.sort_by_key(|e| e.time);
     }
 }
