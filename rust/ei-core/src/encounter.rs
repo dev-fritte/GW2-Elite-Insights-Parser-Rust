@@ -60,6 +60,13 @@ impl Agent {
 
 /// First and last time of every agent address in the kept records (`UpdateAgentData`).
 pub(crate) fn spans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
+    let mut spans = spans_without_orphans(kept);
+    assign_orphans(kept, &mut spans);
+    spans
+}
+
+/// The times of the agents from the records that name them by address.
+fn spans_without_orphans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
     let mut spans: HashMap<u64, (i64, i64)> = HashMap::new();
     let mut touch = |address: u64, time: i64| {
@@ -75,7 +82,6 @@ pub(crate) fn spans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
             touch(redirect(e.dst_agent), e.time);
         }
     }
-    assign_orphans(kept, &mut spans);
     spans
 }
 
@@ -83,28 +89,50 @@ pub(crate) fn spans(kept: &Kept) -> HashMap<u64, (i64, i64)> {
 /// instance id that is known around that time (`orphanedSrcInstidCombatItems` of
 /// `CompleteAgentsAndLogData`); they stretch the times the agent is known.
 fn assign_orphans(kept: &Kept, spans: &mut HashMap<u64, (i64, i64)>) {
+    orphan_owners(kept, spans);
+}
+
+/// Gives the records that name an agent only by its instance id the address of that agent
+/// (`OverrideSrcAgent` and `OverrideDstAgent` of `CompleteAgentsAndLogData`).
+pub fn resolve_orphans(kept: &mut Kept) {
+    let mut spans = spans_without_orphans(kept);
+    let owners = orphan_owners(kept, &mut spans);
+    for (index, is_src, address) in owners {
+        let e = &mut kept.events[index];
+        if is_src {
+            e.src_agent = address;
+        } else {
+            e.dst_agent = address;
+        }
+    }
+}
+
+/// The agent every orphaned record belongs to, as (record index, is the source, address), and the
+/// times of the agents stretched by them.
+fn orphan_owners(kept: &Kept, spans: &mut HashMap<u64, (i64, i64)>) -> Vec<(usize, bool, u64)> {
     let redirect = |a: u64| *kept.agent_redirection.get(&a).unwrap_or(&a);
     // the instance id of every agent: the first one its records carry
     let mut instids: HashMap<u64, u16> = HashMap::new();
     let mut src_orphans = Vec::new();
     let mut dst_orphans = Vec::new();
-    for e in &kept.events {
+    for (index, e) in kept.events.iter().enumerate() {
         if src_is_agent(e.state_change) && e.src_instid != 0 {
             if e.src_agent == 0 {
-                src_orphans.push((e.time, e.src_instid));
+                src_orphans.push((index, true, e.time, e.src_instid));
             } else {
                 instids.entry(redirect(e.src_agent)).or_insert(e.src_instid);
             }
         }
         if dst_is_agent(e.state_change) && e.dst_instid != 0 {
             if e.dst_agent == 0 {
-                dst_orphans.push((e.time, e.dst_instid));
+                dst_orphans.push((index, false, e.time, e.dst_instid));
             } else {
                 instids.entry(redirect(e.dst_agent)).or_insert(e.dst_instid);
             }
         }
     }
-    for (time, instid) in src_orphans.into_iter().chain(dst_orphans) {
+    let mut owners = Vec::new();
+    for (index, is_src, time, instid) in src_orphans.into_iter().chain(dst_orphans) {
         let mut candidates: Vec<(u64, i64, i64)> = instids
             .iter()
             .filter(|&(_, &i)| i == instid)
@@ -119,8 +147,10 @@ fn assign_orphans(kept: &Kept, spans: &mut HashMap<u64, (i64, i64)>) {
         {
             span.0 = span.0.min(time);
             span.1 = span.1.max(time);
+            owners.push((index, is_src, found.0));
         }
     }
+    owners
 }
 
 /// Non player characters of one species, ordered by first appearance.

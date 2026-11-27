@@ -317,6 +317,7 @@ pub fn analyze_damage(
         header.build(),
         KeepSettings::default(),
     )?;
+    crate::encounter::resolve_orphans(&mut kept);
     let players = find_players(evtc.agents(), &kept, &api.specs, false);
     crate::special::process(
         &mut kept,
