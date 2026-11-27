@@ -19,6 +19,7 @@ pub mod pipeline;
 pub mod players;
 pub mod rules;
 pub mod spec;
+mod special;
 pub mod subphases;
 
 /// Constants generated from the C# sources by `tools/gen`. Do not edit by hand.
